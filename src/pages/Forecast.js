@@ -163,7 +163,7 @@ export default function Forecast({ perfil, onLogout }) {
       setLoading(false)
     }
     carregar()
-  }, [perfil, semana, anoAtual])
+  }, [perfil.nome, perfil.perfil])
  
   function setValor(chave, campo, val) {
     setValores(prev => ({ ...prev, [chave]: { ...prev[chave], [campo]: val } }))
