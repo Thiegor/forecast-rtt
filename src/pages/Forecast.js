@@ -154,7 +154,7 @@ export default function Forecast({ perfil, onLogout }) {
       setLoading(false)
     }
     carregar()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, []) // eslint-disable-line
 
   function setValor(chave, campo, val) {
     setValores(prev => ({ ...prev, [chave]: { ...prev[chave], [campo]: val } }))
