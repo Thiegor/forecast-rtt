@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useForecast } from '../hooks/useForecast'
 
 const RTT = {
@@ -128,9 +128,9 @@ export default function Forecast({ perfil, onLogout }) {
   const [painel, setPainel] = useState(null)
   const [filtro, setFiltro] = useState("Todos")
 
-  const setValor = useCallback((chave, campo, val) => {
+function setValor(chave, campo, val) {
     setValores(prev => ({ ...prev, [chave]: { ...prev[chave], [campo]: val } }))
-  }, [])
+  }
 
   function getVal(chave, campo) {
     const mes = campo === 'mes1' ? mes1 : campo === 'mes2' ? mes2 : mes3
