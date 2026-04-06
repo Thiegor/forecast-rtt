@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-
+ 
 const RTT = {
   vermelho: "#E31E24",
   vermelhoEscuro: "#B71C1F",
@@ -17,16 +17,17 @@ const RTT = {
   amarelo: "#f0a500",
   verde: "#22c55e",
 }
-
+ 
 const GRUPO_CORES = {
   Backlog:   { bg:"rgba(227,30,36,0.1)", text:"#E31E24", border:"rgba(227,30,36,0.2)" },
   Renovação: { bg:"rgba(96,165,250,0.1)", text:"#60a5fa", border:"rgba(96,165,250,0.2)" },
   PIPE:      { bg:"rgba(240,165,0,0.1)", text:"#f0a500", border:"rgba(240,165,0,0.2)" },
   Spot:      { bg:"rgba(168,85,247,0.1)", text:"#c084fc", border:"rgba(168,85,247,0.2)" },
 }
-
+ 
 const MESES_LONGOS = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
-
+const MESES_BP = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
+ 
 function getISOWeek(date) {
   const d = new Date(date)
   d.setHours(0,0,0,0)
@@ -34,42 +35,41 @@ function getISOWeek(date) {
   const week1 = new Date(d.getFullYear(), 0, 4)
   return 1 + Math.round(((d - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7)
 }
-
+ 
 function getMesNome(offset) {
   const d = new Date()
   d.setMonth(d.getMonth() + offset)
   return d.toLocaleString('pt-BR', { month: 'long' })
 }
-
+ 
 function getAno(offset) {
   const d = new Date()
   d.setMonth(d.getMonth() + offset)
   return d.getFullYear()
 }
-
+ 
 function fmt(val) {
   if (!val || val === 0) return "—"
   if (val >= 1000000) return `${(val/1000000).toFixed(1)}M`
   if (val >= 1000) return `${(val/1000).toFixed(0)}K`
   return val.toLocaleString("pt-BR")
 }
-
+ 
 function calcPct(a, b) {
   if (!b || b === 0) return null
   return ((a - b) / b) * 100
 }
-
+ 
 function Delta({ val, ref }) {
   const p = calcPct(val, ref)
   if (p === null || !val) return <span style={{color:RTT.cinzaTexto,fontSize:9}}>—</span>
   const cor = p > 5 ? RTT.verde : p < -5 ? RTT.vermelho : RTT.amarelo
   return <span style={{fontSize:9,fontWeight:700,color:cor}}>{p>0?"▲":"▼"}{Math.abs(p).toFixed(0)}%</span>
 }
-
-function PainelAnual({ proj, semana, onClose }) {
-  const mesAtual = new Date().getMonth()
-  const mesesRolantes = [mesAtual, mesAtual+1, mesAtual+2]
-
+ 
+function PainelAnual({ proj, mesAtualIdx, onClose }) {
+  const mesesRolantes = [mesAtualIdx, mesAtualIdx+1, mesAtualIdx+2]
+ 
   return (
     <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex"}}>
       <div onClick={onClose} style={{flex:1,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(4px)"}}/>
@@ -86,24 +86,31 @@ function PainelAnual({ proj, semana, onClose }) {
             </div>
             <button onClick={onClose} style={{background:"rgba(0,0,0,0.25)",border:"none",color:"#fff",width:28,height:28,borderRadius:6,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
           </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {[
+              {l:"Total BP 2026", v:`R$ ${fmt(MESES_BP.reduce((s,m)=>s+(proj[`bp_${m}`]||0),0))}`, c:"rgba(255,255,255,0.9)"},
+              {l:"BP Médio/mês", v:`R$ ${fmt(MESES_BP.reduce((s,m)=>s+(proj[`bp_${m}`]||0),0)/12)}`, c:"rgba(255,255,255,0.9)"},
+            ].map(k=>(
+              <div key={k.l} style={{background:"rgba(0,0,0,0.2)",borderRadius:7,padding:"9px 11px"}}>
+                <div style={{fontSize:8,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:3}}>{k.l}</div>
+                <div style={{fontSize:14,fontWeight:800,color:k.c}}>{k.v}</div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"52px 1fr 44px",gap:0,padding:"10px 20px 7px",borderBottom:`1px solid ${RTT.cinzaBorda}`}}>
-          {["Mês","BP 2026",""].map((h,i)=>(
+        <div style={{display:"grid",gridTemplateColumns:"60px 1fr",gap:0,padding:"10px 20px 7px",borderBottom:`1px solid ${RTT.cinzaBorda}`}}>
+          {["Mês","BP 2026"].map((h,i)=>(
             <div key={i} style={{fontSize:8,color:RTT.cinzaTexto,textTransform:"uppercase",letterSpacing:"0.08em",textAlign:i>0?"center":"left",fontWeight:700}}>{h}</div>
           ))}
         </div>
         <div style={{flex:1,overflowY:"auto"}}>
           {MESES_LONGOS.map((mes,i)=>{
             const isAtual = mesesRolantes.includes(i)
+            const bp = proj[`bp_${MESES_BP[i]}`] || 0
             return (
-              <div key={mes} style={{display:"grid",gridTemplateColumns:"52px 1fr 44px",gap:0,padding:"8px 20px",background:isAtual?RTT.vermelhoFundo:"transparent",borderLeft:isAtual?`2px solid ${RTT.vermelho}`:"2px solid transparent"}}>
+              <div key={mes} style={{display:"grid",gridTemplateColumns:"60px 1fr",gap:0,padding:"8px 20px",background:isAtual?RTT.vermelhoFundo:"transparent",borderLeft:isAtual?`2px solid ${RTT.vermelho}`:"2px solid transparent"}}>
                 <div style={{fontSize:11,fontWeight:isAtual?700:400,color:isAtual?RTT.vermelho:RTT.cinzaClaro}}>{mes.slice(0,3)}</div>
-                <div style={{textAlign:"center"}}>
-  <div style={{fontSize:11,fontWeight:600,color:RTT.amarelo}}>
-    {fmt(proj[`bp_${m.label.slice(0,3).toLowerCase()}`] || 0)}
-  </div>
-</div>
-                <div style={{textAlign:"center"}}></div>
+                <div style={{textAlign:"center",fontSize:12,fontWeight:600,color:RTT.amarelo}}>{fmt(bp)}</div>
               </div>
             )
           })}
@@ -115,7 +122,7 @@ function PainelAnual({ proj, semana, onClose }) {
     </div>
   )
 }
-
+ 
 export default function Forecast({ perfil, onLogout }) {
   const [projetos, setProjetos] = useState([])
   const [forecastSemana, setForecastSemana] = useState([])
@@ -126,22 +133,23 @@ export default function Forecast({ perfil, onLogout }) {
   const [erro, setErro] = useState(null)
   const [painel, setPainel] = useState(null)
   const [filtro, setFiltro] = useState("Todos")
-
+ 
   const semana = getISOWeek(new Date())
   const anoAtual = new Date().getFullYear()
+  const mesAtualIdx = new Date().getMonth()
   const mes1 = getMesNome(0)
   const mes2 = getMesNome(1)
   const mes3 = getMesNome(2)
   const ano1 = getAno(0)
   const ano2 = getAno(1)
   const ano3 = getAno(2)
-
+ 
   const MESES = [
-    { key:'mes1', label:mes1, ano:ano1 },
-    { key:'mes2', label:mes2, ano:ano2 },
-    { key:'mes3', label:mes3, ano:ano3 },
+    { key:'mes1', label:mes1, ano:ano1, bp_campo:`bp_${MESES_BP[mesAtualIdx]}` },
+    { key:'mes2', label:mes2, ano:ano2, bp_campo:`bp_${MESES_BP[mesAtualIdx+1]}` },
+    { key:'mes3', label:mes3, ano:ano3, bp_campo:`bp_${MESES_BP[mesAtualIdx+2]}` },
   ]
-
+ 
   useEffect(() => {
     async function carregar() {
       setLoading(true)
@@ -149,35 +157,35 @@ export default function Forecast({ perfil, onLogout }) {
       if (perfil.perfil === 'gestor') q = q.eq('gerente_site', perfil.nome)
       const { data: proj } = await q
       setProjetos(proj || [])
-
+ 
       const { data: fc } = await supabase.from('forecast_semanal').select('*').eq('semana_coleta', semana).eq('ano_referencia', anoAtual)
       setForecastSemana(fc || [])
       setLoading(false)
     }
     carregar()
   }, [perfil, semana, anoAtual])
-
+ 
   function setValor(chave, campo, val) {
     setValores(prev => ({ ...prev, [chave]: { ...prev[chave], [campo]: val } }))
   }
-
+ 
   function getVal(chave, campo) {
     if (valores[chave]?.[campo] !== undefined) return valores[chave][campo]
     const mes = campo === 'mes1' ? mes1 : campo === 'mes2' ? mes2 : mes3
     const fc = forecastSemana.find(f => f.chave_rfc === chave && f.mes_referencia === mes)
     return fc?.receita_prevista || ''
   }
-
+ 
   function getRFC(chave, mes) {
     const fc = forecastSemana.find(f => f.chave_rfc === chave && f.mes_referencia === mes)
     return fc?.receita_prevista || 0
   }
-
+ 
   async function handleEnviar() {
     setEnviando(true)
     setErro(null)
     const registros = []
-
+ 
     for (const [chave_rfc, vals] of Object.entries(valores)) {
       const proj = projetos.find(p => p.chave_rfc === chave_rfc)
       if (!proj) continue
@@ -203,13 +211,13 @@ export default function Forecast({ perfil, onLogout }) {
         })
       }
     }
-
+ 
     if (registros.length === 0) {
       setErro('Nenhum valor preenchido.')
       setEnviando(false)
       return
     }
-
+ 
     const { error } = await supabase.from('forecast_semanal').upsert(registros, { onConflict:'chave_unica' })
     if (error) {
       setErro(error.message)
@@ -222,12 +230,13 @@ export default function Forecast({ perfil, onLogout }) {
     }
     setEnviando(false)
   }
-
+ 
   const projsFiltrados = filtro === "Todos" ? projetos : projetos.filter(p => p.gerente_site === filtro)
   const gerentes = [...new Set(projetos.map(p => p.gerente_site))].sort()
   const gerentesVisiveis = filtro === "Todos" ? gerentes : [filtro]
   const totalRFC = projsFiltrados.reduce((s,p) => s + getRFC(p.chave_rfc, mes1), 0)
-
+  const totalBP = projsFiltrados.reduce((s,p) => s + (p[`bp_${MESES_BP[mesAtualIdx]}`]||0), 0)
+ 
   return (
     <div style={{minHeight:"100vh",background:RTT.preto,fontFamily:"Georgia,serif",color:RTT.branco}}>
       <header style={{background:RTT.cinzaEscuro,borderBottom:`1px solid ${RTT.cinzaBorda}`,padding:"0 24px",position:"sticky",top:0,zIndex:50}}>
@@ -240,11 +249,17 @@ export default function Forecast({ perfil, onLogout }) {
                 <div style={{fontSize:9,color:RTT.cinzaTexto}}>Semana {semana} · {mes1.slice(0,3)} → {mes3.slice(0,3)} {anoAtual}</div>
               </div>
             </div>
-            <div style={{display:"flex",gap:18}}>
-              <div>
-                <div style={{fontSize:8,color:RTT.cinzaTexto,textTransform:"uppercase",letterSpacing:"0.08em"}}>RFC s-1 {mes1.slice(0,3)}</div>
-                <div style={{fontSize:13,fontWeight:700,color:RTT.amarelo}}>R$ {fmt(totalRFC)}</div>
-              </div>
+            <div style={{display:"flex",gap:20}}>
+              {[
+                {l:`BP ${mes1.slice(0,3)}`, v:`R$ ${fmt(totalBP)}`, c:RTT.amarelo},
+                {l:"RFC s-1", v:`R$ ${fmt(totalRFC)}`, c:RTT.cinzaClaro},
+                {l:"Δ vs BP", v:calcPct(totalRFC,totalBP)!==null?`${calcPct(totalRFC,totalBP)>0?"+":""}${calcPct(totalRFC,totalBP).toFixed(0)}%`:"—", c:calcPct(totalRFC,totalBP)>=0?RTT.verde:RTT.vermelho},
+              ].map(k=>(
+                <div key={k.l}>
+                  <div style={{fontSize:8,color:RTT.cinzaTexto,textTransform:"uppercase",letterSpacing:"0.08em"}}>{k.l}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:k.c}}>{k.v}</div>
+                </div>
+              ))}
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -257,10 +272,10 @@ export default function Forecast({ perfil, onLogout }) {
           </div>
         </div>
       </header>
-
+ 
       {sucesso && <div style={{background:"#052e16",borderBottom:"1px solid #14532d",color:"#22c55e",padding:"8px 24px",fontSize:11,textAlign:"center",fontWeight:700}}>✓ FORECAST SEMANA {semana} ENVIADO COM SUCESSO</div>}
       {erro && <div style={{background:"#2d0a0a",borderBottom:"1px solid #7f1d1d",color:"#fca5a5",padding:"8px 24px",fontSize:11,textAlign:"center"}}>✗ {erro}</div>}
-
+ 
       <main style={{maxWidth:1800,margin:"0 auto",padding:"18px 24px"}}>
         {perfil.perfil === 'admin' && (
           <div style={{display:"flex",gap:5,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
@@ -272,14 +287,13 @@ export default function Forecast({ perfil, onLogout }) {
             ))}
           </div>
         )}
-
+ 
         {loading ? (
           <div style={{textAlign:"center",padding:"80px",color:RTT.cinzaTexto,fontSize:14}}>Carregando projetos...</div>
         ) : projsFiltrados.length === 0 ? (
           <div style={{textAlign:"center",padding:"80px",color:RTT.cinzaTexto,fontSize:14}}>Nenhum projeto encontrado.</div>
         ) : (
           <>
-            {/* Cabeçalho linha 1 */}
             <div style={{display:"grid",gridTemplateColumns:"280px 1fr 1fr 1fr 36px",gap:4,padding:"0 12px"}}>
               <div/>
               {MESES.map(m=>(
@@ -289,8 +303,7 @@ export default function Forecast({ perfil, onLogout }) {
               ))}
               <div/>
             </div>
-
-            {/* Cabeçalho linha 2 */}
+ 
             <div style={{display:"grid",gridTemplateColumns:"280px 1fr 1fr 1fr 36px",gap:4,padding:"0 12px",marginBottom:4}}>
               <div style={{fontSize:8,color:RTT.cinzaTexto,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:700,padding:"4px 0"}}>Projeto</div>
               {MESES.map(m=>(
@@ -302,8 +315,7 @@ export default function Forecast({ perfil, onLogout }) {
               ))}
               <div/>
             </div>
-
-            {/* Linhas */}
+ 
             {gerentesVisiveis.map(gerente => {
               const projs = projsFiltrados.filter(p => p.gerente_site === gerente)
               if (!projs.length) return null
@@ -325,16 +337,18 @@ export default function Forecast({ perfil, onLogout }) {
                           <div style={{fontSize:11,fontWeight:500,color:RTT.branco,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{proj.identificacao}</div>
                           <span style={{fontSize:9,padding:"1px 6px",borderRadius:3,fontWeight:600,background:gs.bg,color:gs.text,border:`1px solid ${gs.border}`,marginTop:3,display:"inline-block"}}>{proj.grupo||"—"}</span>
                         </div>
-
-                        {MESES.map((m, idx) => {
+ 
+                        {MESES.map(m => {
+                          const bp = proj[m.bp_campo] || 0
                           const rfc = getRFC(proj.chave_rfc, m.label)
                           return (
                             <div key={m.key} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:3,padding:"4px 6px",background:"rgba(227,30,36,0.03)",borderLeft:"1px solid rgba(227,30,36,0.1)",borderRight:"1px solid rgba(227,30,36,0.1)",borderRadius:4}}>
                               <div style={{textAlign:"center"}}>
-                                <div style={{fontSize:11,fontWeight:600,color:RTT.amarelo}}>—</div>
+                                <div style={{fontSize:11,fontWeight:600,color:RTT.amarelo}}>{fmt(bp)}</div>
                               </div>
                               <div style={{textAlign:"center"}}>
                                 <div style={{fontSize:11,fontWeight:600,color:RTT.brancoSuave}}>{fmt(rfc)}</div>
+                                <Delta val={rfc} ref={bp}/>
                               </div>
                               <div>
                                 <input type="number" placeholder="0" value={getVal(proj.chave_rfc, m.key)} onChange={e=>setValor(proj.chave_rfc, m.key, e.target.value)}
@@ -346,7 +360,7 @@ export default function Forecast({ perfil, onLogout }) {
                             </div>
                           )
                         })}
-
+ 
                         <button onClick={()=>setPainel(proj)} style={{width:28,height:28,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:5,color:RTT.cinzaTexto,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.1s",flexShrink:0}}
                           onMouseEnter={e=>{e.currentTarget.style.borderColor=RTT.vermelho;e.currentTarget.style.color=RTT.vermelho}}
                           onMouseLeave={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda;e.currentTarget.style.color=RTT.cinzaTexto}}
@@ -357,7 +371,7 @@ export default function Forecast({ perfil, onLogout }) {
                 </div>
               )
             })}
-
+ 
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",marginTop:8,background:RTT.cinzaEscuro,borderRadius:7,border:`1px solid ${RTT.cinzaBorda}`}}>
               <div style={{fontSize:10,color:RTT.cinzaTexto}}>{projsFiltrados.length} projetos · Prazo: <strong style={{color:RTT.branco}}>sexta-feira às 12h</strong> · Semana {semana}/{anoAtual}</div>
               <button onClick={handleEnviar} disabled={enviando} style={{background:RTT.vermelho,color:"#fff",border:"none",padding:"9px 22px",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.05em",opacity:enviando?0.7:1}}
@@ -368,7 +382,7 @@ export default function Forecast({ perfil, onLogout }) {
           </>
         )}
       </main>
-      {painel && <PainelAnual proj={painel} semana={semana} onClose={()=>setPainel(null)}/>}
+      {painel && <PainelAnual proj={painel} mesAtualIdx={mesAtualIdx} onClose={()=>setPainel(null)}/>}
     </div>
   )
 }
