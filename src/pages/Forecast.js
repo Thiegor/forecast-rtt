@@ -98,7 +98,11 @@ function PainelAnual({ proj, semana, onClose }) {
             return (
               <div key={mes} style={{display:"grid",gridTemplateColumns:"52px 1fr 44px",gap:0,padding:"8px 20px",background:isAtual?RTT.vermelhoFundo:"transparent",borderLeft:isAtual?`2px solid ${RTT.vermelho}`:"2px solid transparent"}}>
                 <div style={{fontSize:11,fontWeight:isAtual?700:400,color:isAtual?RTT.vermelho:RTT.cinzaClaro}}>{mes.slice(0,3)}</div>
-                <div style={{textAlign:"center",fontSize:12,fontWeight:600,color:RTT.amarelo}}>—</div>
+                <div style={{textAlign:"center"}}>
+  <div style={{fontSize:11,fontWeight:600,color:RTT.amarelo}}>
+    {fmt(proj[`bp_${m.label.slice(0,3).toLowerCase()}`] || 0)}
+  </div>
+</div>
                 <div style={{textAlign:"center"}}></div>
               </div>
             )
