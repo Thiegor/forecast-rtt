@@ -26,7 +26,9 @@ const GRUPO_CORES = {
 }
 
 const MESES_LONGOS = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
-const MESES_BP = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez']
+
+// URL do webhook Power Automate — preencher após criar o flow "Exportar RFC Semanal"
+const WEBHOOK_RFC_URL = ''
 
 const CONFIANCA_OPTS = [
   { label: "Confirmado", cor: "#22c55e", corFundo: "rgba(34,197,94,0.15)", corBorda: "rgba(34,197,94,0.4)" },
@@ -80,18 +82,30 @@ function fmtDataColeta(iso) {
   return `${dia}/${mes} ${h}:${min}`
 }
 
-function PainelAnual({ proj, mesAtualIdx, onClose }) {
+function PainelAnual({ proj, mesAtualIdx, bpAnual, forecastAnual, onClose }) {
+  const anoAtual = new Date().getFullYear()
   const mesesRolantes = [mesAtualIdx, mesAtualIdx+1, mesAtualIdx+2]
-  const totalBP = MESES_BP.reduce((s,m) => s + (proj['bp_'+m]||0), 0)
+  const projBP = bpAnual.filter(b => b.chave_rfc === proj.chave_rfc && b.ano === anoAtual)
+  const totalBP = projBP.reduce((s,b) => s + (b.valor_bp||0), 0)
+
+  // RFC atual por mês: registro com maior semana_coleta
+  const rfcPorMes = {}
+  forecastAnual
+    .filter(f => f.chave_rfc === proj.chave_rfc && f.ano_referencia === anoAtual)
+    .forEach(f => {
+      const key = f.mes_referencia
+      if (!rfcPorMes[key] || f.semana_coleta > rfcPorMes[key].semana_coleta)
+        rfcPorMes[key] = f
+    })
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex"}}>
       <div onClick={onClose} style={{flex:1,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(4px)"}}/>
-      <div style={{width:480,background:RTT.cinzaEscuro,borderLeft:`1px solid ${RTT.cinzaBorda2}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{width:520,background:RTT.cinzaEscuro,borderLeft:`1px solid ${RTT.cinzaBorda2}`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         <div style={{background:RTT.vermelho,padding:"22px 24px 18px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
             <div style={{flex:1,marginRight:12}}>
-              <div style={{fontSize:9,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:5}}>Visão Anual 2026</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:5}}>Visão Anual {anoAtual}</div>
               <div style={{fontSize:13,fontWeight:700,color:"#fff",lineHeight:1.35}}>{proj.identificacao}</div>
               <div style={{display:"flex",gap:8,marginTop:8,alignItems:"center"}}>
                 <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:"rgba(0,0,0,0.2)",color:"#fff",fontWeight:600}}>{proj.grupo}</span>
@@ -102,8 +116,8 @@ function PainelAnual({ proj, mesAtualIdx, onClose }) {
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             {[
-              {l:"Total BP 2026", v:`R$ ${fmt(totalBP)}`},
-              {l:"BP Médio/mês",  v:`R$ ${fmt(totalBP/12)}`},
+              {l:"Total BP "+anoAtual, v:`R$ ${fmt(totalBP)}`},
+              {l:"BP Médio/mês",       v:`R$ ${fmt(totalBP/12)}`},
             ].map(k=>(
               <div key={k.l} style={{background:"rgba(0,0,0,0.2)",borderRadius:7,padding:"9px 11px"}}>
                 <div style={{fontSize:8,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:3}}>{k.l}</div>
@@ -112,19 +126,28 @@ function PainelAnual({ proj, mesAtualIdx, onClose }) {
             ))}
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"60px 1fr",gap:0,padding:"10px 20px 7px",borderBottom:`1px solid ${RTT.cinzaBorda}`}}>
-          {["Mês","BP 2026"].map((h,i)=>(
-            <div key={i} style={{fontSize:8,color:RTT.cinzaTexto,textTransform:"uppercase",letterSpacing:"0.08em",textAlign:i>0?"center":"left",fontWeight:700}}>{h}</div>
+        <div style={{display:"grid",gridTemplateColumns:"50px 1fr 1fr 60px",gap:0,padding:"10px 20px 7px",borderBottom:`1px solid ${RTT.cinzaBorda}`}}>
+          {["Mês","BP","RFC atual","Δ"].map((h,i)=>(
+            <div key={i} style={{fontSize:8,color:i===2?RTT.cinzaClaro:RTT.cinzaTexto,textTransform:"uppercase",letterSpacing:"0.08em",textAlign:i>0?"center":"left",fontWeight:700}}>{h}</div>
           ))}
         </div>
         <div style={{flex:1,overflowY:"auto"}}>
           {MESES_LONGOS.map((mes,i)=>{
             const isAtual = mesesRolantes.includes(i)
-            const bp = proj['bp_'+MESES_BP[i]] || 0
+            const bpReg = projBP.find(b => b.mes === i+1)
+            const bp = bpReg?.valor_bp || 0
+            const rfcReg = rfcPorMes[mes]
+            const rfc = rfcReg?.receita_prevista || 0
+            const delta = bp > 0 && rfc > 0 ? ((rfc - bp) / bp * 100) : null
+            const deltaCor = delta === null ? RTT.cinzaTexto : delta > 5 ? RTT.verde : delta < -5 ? RTT.vermelho : RTT.amarelo
             return (
-              <div key={mes} style={{display:"grid",gridTemplateColumns:"60px 1fr",gap:0,padding:"8px 20px",background:isAtual?RTT.vermelhoFundo:"transparent",borderLeft:isAtual?`2px solid ${RTT.vermelho}`:"2px solid transparent"}}>
+              <div key={mes} style={{display:"grid",gridTemplateColumns:"50px 1fr 1fr 60px",gap:0,padding:"8px 20px",background:isAtual?RTT.vermelhoFundo:"transparent",borderLeft:isAtual?`2px solid ${RTT.vermelho}`:"2px solid transparent"}}>
                 <div style={{fontSize:11,fontWeight:isAtual?700:400,color:isAtual?RTT.vermelho:RTT.cinzaClaro}}>{mes.slice(0,3)}</div>
-                <div style={{textAlign:"center",fontSize:12,fontWeight:600,color:RTT.amarelo}}>{fmt(bp)}</div>
+                <div style={{textAlign:"center",fontSize:11,fontWeight:600,color:RTT.amarelo}}>{fmt(bp)}</div>
+                <div style={{textAlign:"center",fontSize:11,fontWeight:600,color:rfc?RTT.brancoSuave:RTT.cinzaTexto}}>{rfc ? fmt(rfc) : "—"}</div>
+                <div style={{textAlign:"center",fontSize:9,fontWeight:700,color:deltaCor}}>
+                  {delta !== null ? `${delta>0?'▲':'▼'}${Math.abs(delta).toFixed(0)}%` : "—"}
+                </div>
               </div>
             )
           })}
@@ -149,6 +172,10 @@ export default function Forecast({ perfil, onLogout }) {
   const [erro, setErro] = useState(null)
   const [painel, setPainel] = useState(null)
   const [filtro, setFiltro] = useState("Todos")
+  const [bpAnual, setBpAnual] = useState([])
+  const [forecastAnual, setForecastAnual] = useState([])
+  const [atualizandoRFC, setAtualizandoRFC] = useState(false)
+  const [rfcAtualizado, setRfcAtualizado] = useState(false)
 
   const now = new Date()
   const semana = getISOWeek(now)
@@ -168,9 +195,9 @@ export default function Forecast({ perfil, onLogout }) {
   const ano3 = mesAtualIdx+2 > 11 ? anoAtual+1 : anoAtual
 
   const MESES = [
-    { key:'mes1', label:mes1, ano:ano1, bp_campo:'bp_'+MESES_BP[mesAtualIdx] },
-    { key:'mes2', label:mes2, ano:ano2, bp_campo:'bp_'+MESES_BP[mesAtualIdx+1 > 11 ? 0 : mesAtualIdx+1] },
-    { key:'mes3', label:mes3, ano:ano3, bp_campo:'bp_'+MESES_BP[mesAtualIdx+2 > 11 ? 1 : mesAtualIdx+2] },
+    { key:'mes1', label:mes1, ano:ano1, mesNum: mesAtualIdx + 1 },
+    { key:'mes2', label:mes2, ano:ano2, mesNum: (mesAtualIdx + 1) % 12 + 1 },
+    { key:'mes3', label:mes3, ano:ano3, mesNum: (mesAtualIdx + 2) % 12 + 1 },
   ]
 
   useEffect(() => {
@@ -192,6 +219,18 @@ export default function Forecast({ perfil, onLogout }) {
         .from('forecast_semanal').select('*')
         .eq('semana_coleta', semanaPrev).eq('ano_referencia', anoPrev)
       setForecastSemanaAnterior(fcPrev || [])
+
+      // BP anual — todos os meses do ano atual
+      const { data: bp } = await supabase
+        .from('bp_anual').select('*')
+        .eq('ano', anoAtual)
+      setBpAnual(bp || [])
+
+      // Forecast anual — todos os registros do ano atual (para PainelAnual)
+      const { data: fcAnual } = await supabase
+        .from('forecast_semanal').select('*')
+        .eq('ano_referencia', anoAtual)
+      setForecastAnual(fcAnual || [])
 
       setLoading(false)
     }
@@ -245,6 +284,12 @@ export default function Forecast({ perfil, onLogout }) {
   function getRFC(chave, mes) {
     const fc = forecastSemanaAnterior.find(f => f.chave_rfc === chave && f.mes_referencia === mes)
     return fc ? fc.receita_prevista : 0
+  }
+
+  // BP: lê de bp_anual por chave_rfc + mes (número 1-12) + ano
+  function getBP(chave_rfc, mes, ano) {
+    const reg = bpAnual.find(b => b.chave_rfc === chave_rfc && b.mes === mes && b.ano === ano)
+    return reg?.valor_bp || 0
   }
 
   // Status de envio do gestor atual
@@ -321,10 +366,31 @@ export default function Forecast({ perfil, onLogout }) {
     setEnviando(false)
   }
 
+  async function handleAtualizarRFC() {
+    if (!WEBHOOK_RFC_URL) {
+      alert('Webhook do Power Automate não configurado. Preencha WEBHOOK_RFC_URL em Forecast.js.')
+      return
+    }
+    if (!window.confirm(`Deseja re-exportar o RFC da semana ${semana}/${anoAtual} para o SharePoint?`)) return
+    setAtualizandoRFC(true)
+    try {
+      await fetch(WEBHOOK_RFC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ semana, ano: anoAtual }),
+      })
+      setRfcAtualizado(true)
+      setTimeout(() => setRfcAtualizado(false), 5000)
+    } catch (e) {
+      alert('Erro ao acionar webhook: ' + e.message)
+    }
+    setAtualizandoRFC(false)
+  }
+
   const projsFiltrados = filtro === "Todos" ? projetos : projetos.filter(p => p.gerente_site === filtro)
   const gerentes = [...new Set(projetos.map(p => p.gerente_site))].sort()
   const gerentesVisiveis = filtro === "Todos" ? gerentes : [filtro]
-  const totalBP = projsFiltrados.reduce((s,p) => s + (p[MESES[0].bp_campo]||0), 0)
+  const totalBP = projsFiltrados.reduce((s,p) => s + getBP(p.chave_rfc, MESES[0].mesNum, MESES[0].ano), 0)
   const totalRFC = projsFiltrados.reduce((s,p) => s + getRFC(p.chave_rfc, mes1), 0)
   const delta = calcPct(totalRFC, totalBP)
 
@@ -452,7 +518,7 @@ export default function Forecast({ perfil, onLogout }) {
 
                         {/* CÉLULAS DE MÊS */}
                         {MESES.map(m => {
-                          const bp  = proj[m.bp_campo] || 0
+                          const bp  = getBP(proj.chave_rfc, m.mesNum, m.ano)
                           const rfc = getRFC(proj.chave_rfc, m.label)
                           const obsKey = proj.chave_rfc + '_' + m.key
                           const obsAberta = obsAbertas.has(obsKey)
@@ -554,19 +620,29 @@ export default function Forecast({ perfil, onLogout }) {
                   </div>
                 )}
               </div>
-              <button
-                onClick={handleEnviar}
-                disabled={enviando || janelaBloqueada}
-                style={{background:janelaBloqueada?RTT.cinzaMedio:RTT.vermelho,color:janelaBloqueada?RTT.cinzaTexto:"#fff",border:"none",padding:"9px 22px",borderRadius:6,fontSize:12,fontWeight:700,cursor:janelaBloqueada?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:"0.05em",opacity:enviando?0.7:1}}
-                onMouseEnter={e=>{ if(!enviando&&!janelaBloqueada) e.currentTarget.style.background=RTT.vermelhoEscuro }}
-                onMouseLeave={e=>{ if(!janelaBloqueada) e.currentTarget.style.background=RTT.vermelho }}
-              >{enviando?"ENVIANDO...":"ENVIAR FORECAST"}</button>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {perfil.perfil==='admin' && !isJanelaAberta() && (
+                  <button
+                    onClick={handleAtualizarRFC}
+                    disabled={atualizandoRFC}
+                    title="Re-exporta o RFC da semana atual para o SharePoint via Power Automate"
+                    style={{background:"transparent",border:`1px solid ${rfcAtualizado?RTT.verde:RTT.cinzaBorda}`,color:rfcAtualizado?RTT.verde:RTT.cinzaClaro,padding:"7px 14px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.04em",opacity:atualizandoRFC?0.6:1}}
+                  >{atualizandoRFC?"ATUALIZANDO...":rfcAtualizado?"✓ RFC ATUALIZADO":"ATUALIZAR RFC EXPORTADO"}</button>
+                )}
+                <button
+                  onClick={handleEnviar}
+                  disabled={enviando || janelaBloqueada}
+                  style={{background:janelaBloqueada?RTT.cinzaMedio:RTT.vermelho,color:janelaBloqueada?RTT.cinzaTexto:"#fff",border:"none",padding:"9px 22px",borderRadius:6,fontSize:12,fontWeight:700,cursor:janelaBloqueada?"not-allowed":"pointer",fontFamily:"inherit",letterSpacing:"0.05em",opacity:enviando?0.7:1}}
+                  onMouseEnter={e=>{ if(!enviando&&!janelaBloqueada) e.currentTarget.style.background=RTT.vermelhoEscuro }}
+                  onMouseLeave={e=>{ if(!janelaBloqueada) e.currentTarget.style.background=RTT.vermelho }}
+                >{enviando?"ENVIANDO...":"ENVIAR FORECAST"}</button>
+              </div>
             </div>
           </>
         )}
       </main>
 
-      {painel && <PainelAnual proj={painel} mesAtualIdx={mesAtualIdx} onClose={()=>setPainel(null)}/>}
+      {painel && <PainelAnual proj={painel} mesAtualIdx={mesAtualIdx} bpAnual={bpAnual} forecastAnual={forecastAnual} onClose={()=>setPainel(null)}/>}
     </div>
   )
 }
