@@ -480,45 +480,36 @@ export default function Forecast({ perfil, onLogout }) {
                                     type="number"
                                     placeholder="0"
                                     value={getVal(proj.chave_rfc, m.key)}
-                                    disabled={janelaBloqueada}
                                     onChange={e=>setValor(proj.chave_rfc, m.key, e.target.value)}
-                                    style={{flex:1,background:janelaBloqueada?RTT.preto:RTT.cinzaMedio,border:`1px solid ${RTT.cinzaBorda2}`,borderRadius:4,padding:"5px 5px",color:janelaBloqueada?RTT.cinzaTexto:RTT.branco,fontSize:11,outline:"none",textAlign:"right",boxSizing:"border-box",fontFamily:"inherit",cursor:janelaBloqueada?"not-allowed":"text"}}
-                                    onFocus={e=>{ if(!janelaBloqueada) e.target.style.borderColor=RTT.vermelho }}
+                                    style={{flex:1,background:RTT.cinzaMedio,border:`1px solid ${RTT.cinzaBorda2}`,borderRadius:4,padding:"5px 5px",color:RTT.branco,fontSize:11,outline:"none",textAlign:"right",boxSizing:"border-box",fontFamily:"inherit"}}
+                                    onFocus={e=>e.target.style.borderColor=RTT.vermelho}
                                     onBlur={e=>e.target.style.borderColor=RTT.cinzaBorda2}
                                   />
                                   {/* Ícone observação */}
-                                  {!janelaBloqueada && (
-                                    <button
-                                      onClick={()=>toggleObs(obsKey)}
-                                      title="Observação"
-                                      style={{background:"transparent",border:`1px solid ${obsVal?RTT.vermelho:RTT.cinzaBorda}`,borderRadius:4,color:obsVal?RTT.vermelho:RTT.cinzaTexto,width:20,height:24,cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:0}}
-                                    >✎</button>
-                                  )}
+                                  <button
+                                    onClick={()=>toggleObs(obsKey)}
+                                    title="Observação"
+                                    style={{background:"transparent",border:`1px solid ${obsVal?RTT.vermelho:RTT.cinzaBorda}`,borderRadius:4,color:obsVal?RTT.vermelho:RTT.cinzaTexto,width:20,height:24,cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:0}}
+                                  >✎</button>
                                 </div>
 
                                 {/* Botões confiança */}
-                                {!janelaBloqueada && (
-                                  <div style={{display:"flex",gap:2,marginTop:4}}>
-                                    {CONFIANCA_OPTS.map(opt=>{
-                                      const sel = confVal === opt.label
-                                      return (
-                                        <button
-                                          key={opt.label}
-                                          onClick={()=>setValor(proj.chave_rfc, m.key+'_confianca', sel?'':opt.label)}
-                                          style={{flex:1,padding:"2px 0",fontSize:8,fontWeight:sel?700:400,cursor:"pointer",fontFamily:"inherit",borderRadius:3,border:`1px solid ${sel?opt.corBorda:RTT.cinzaBorda}`,background:sel?opt.corFundo:"transparent",color:sel?opt.cor:RTT.cinzaTexto,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}
-                                          title={opt.label}
-                                        >{opt.label}</button>
-                                      )
-                                    })}
-                                  </div>
-                                )}
-                                {/* Exibição da confiança quando bloqueado */}
-                                {janelaBloqueada && confVal && (
-                                  <div style={{marginTop:4,fontSize:8,fontWeight:700,color:CONFIANCA_OPTS.find(o=>o.label===confVal)?.cor||RTT.cinzaTexto}}>{confVal}</div>
-                                )}
+                                <div style={{display:"flex",gap:2,marginTop:4}}>
+                                  {CONFIANCA_OPTS.map(opt=>{
+                                    const sel = confVal === opt.label
+                                    return (
+                                      <button
+                                        key={opt.label}
+                                        onClick={()=>setValor(proj.chave_rfc, m.key+'_confianca', sel?'':opt.label)}
+                                        style={{flex:1,padding:"2px 0",fontSize:8,fontWeight:sel?700:400,cursor:"pointer",fontFamily:"inherit",borderRadius:3,border:`1px solid ${sel?opt.corBorda:RTT.cinzaBorda}`,background:sel?opt.corFundo:"transparent",color:sel?opt.cor:RTT.cinzaTexto,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}
+                                        title={opt.label}
+                                      >{opt.label}</button>
+                                    )
+                                  })}
+                                </div>
 
                                 {/* Campo observação (expansível) */}
-                                {(obsAberta || obsVal) && !janelaBloqueada && (
+                                {(obsAberta || obsVal) && (
                                   <textarea
                                     value={obsVal}
                                     placeholder="Observação..."
@@ -528,10 +519,6 @@ export default function Forecast({ perfil, onLogout }) {
                                     onFocus={e=>e.target.style.borderColor=RTT.vermelho}
                                     onBlur={e=>e.target.style.borderColor=RTT.cinzaBorda2}
                                   />
-                                )}
-                                {/* Observação só leitura quando bloqueado */}
-                                {janelaBloqueada && obsVal && (
-                                  <div style={{marginTop:4,fontSize:9,color:RTT.cinzaClaro,fontStyle:"italic",lineHeight:1.3}}>{obsVal}</div>
                                 )}
                               </div>
                             </div>
