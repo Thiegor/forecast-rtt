@@ -161,7 +161,7 @@ function PainelAnual({ proj, mesAtualIdx, bpAnual, forecastAnual, onClose }) {
 }
 
 export default function Forecast({ perfil, onLogout }) {
-  const [projetos, setProjetos] = useState([])
+  const [projetosCadastro, setProjetosCadastro] = useState([])
   const [forecastSemana, setForecastSemana] = useState([])
   const [forecastSemanaAnterior, setForecastSemanaAnterior] = useState([])
   const [loading, setLoading] = useState(true)
@@ -203,10 +203,9 @@ export default function Forecast({ perfil, onLogout }) {
   useEffect(() => {
     async function carregar() {
       setLoading(true)
-      let q = supabase.from('projetos').select('*').eq('status','Vigente').neq('chave_rfc','').order('identificacao')
-      if (perfil.perfil === 'gestor') q = q.eq('gerente_site', perfil.nome)
-      const { data: proj } = await q
-      setProjetos(proj || [])
+      const { data: cadastro } = await supabase
+        .from('projetos').select('*').eq('status','Vigente').order('identificacao')
+      setProjetosCadastro(cadastro || [])
 
       // semana atual — para pré-preencher inputs e verificar status de envio
       const { data: fc } = await supabase
@@ -312,7 +311,7 @@ export default function Forecast({ perfil, onLogout }) {
       { key:'mes3', label:mes3, ano:ano3 },
     ]
 
-    for (const proj of projetos) {
+    for (const proj of itensFiltrados) {
       const chave_rfc = proj.chave_rfc
       for (const m of mesesMap) {
         // valor: estado local primeiro, senão valor já salvo desta semana
@@ -387,11 +386,44 @@ export default function Forecast({ perfil, onLogout }) {
     setAtualizandoRFC(false)
   }
 
-  const projsFiltrados = filtro === "Todos" ? projetos : projetos.filter(p => p.gerente_site === filtro)
-  const gerentes = [...new Set(projetos.map(p => p.gerente_site))].sort()
+  // Derivar lista de itens: UNIÃO de chave_rfc em bp_anual + forecast_semanal do ano
+  const itensMap = {}
+  bpAnual.forEach(b => {
+    if (!itensMap[b.chave_rfc]) {
+      const proj = projetosCadastro.find(p => p.cod_projeto === b.cod_projeto)
+      itensMap[b.chave_rfc] = {
+        chave_rfc: b.chave_rfc,
+        cod_projeto: b.cod_projeto,
+        grupo: b.grupo,
+        identificacao: proj?.identificacao || b.chave_rfc,
+        gerente_site: proj?.gerente_site || '',
+        gerente_regional: proj?.gerente_regional || '',
+        cliente: proj?.cliente || '',
+      }
+    }
+  })
+  forecastAnual.forEach(f => {
+    if (!itensMap[f.chave_rfc]) {
+      itensMap[f.chave_rfc] = {
+        chave_rfc: f.chave_rfc,
+        cod_projeto: null,
+        grupo: f.grupo,
+        identificacao: f.identificacao,
+        gerente_site: f.gerente_site,
+        gerente_regional: '',
+        cliente: '',
+      }
+    }
+  })
+  const itens = Object.values(itensMap).sort((a, b) => a.identificacao.localeCompare(b.identificacao))
+
+  const itensFiltrados = perfil.perfil === 'gestor'
+    ? itens.filter(i => i.gerente_site === perfil.nome)
+    : filtro === "Todos" ? itens : itens.filter(i => i.gerente_site === filtro)
+  const gerentes = [...new Set(itens.map(i => i.gerente_site).filter(Boolean))].sort()
   const gerentesVisiveis = filtro === "Todos" ? gerentes : [filtro]
-  const totalBP = projsFiltrados.reduce((s,p) => s + getBP(p.chave_rfc, MESES[0].mesNum, MESES[0].ano), 0)
-  const totalRFC = projsFiltrados.reduce((s,p) => s + getRFC(p.chave_rfc, mes1), 0)
+  const totalBP = itensFiltrados.reduce((s, i) => s + getBP(i.chave_rfc, MESES[0].mesNum, MESES[0].ano), 0)
+  const totalRFC = itensFiltrados.reduce((s, i) => s + getRFC(i.chave_rfc, mes1), 0)
   const delta = calcPct(totalRFC, totalBP)
 
   return (
@@ -489,7 +521,7 @@ export default function Forecast({ perfil, onLogout }) {
 
             {/* LINHAS POR GERENTE */}
             {gerentesVisiveis.map(gerente => {
-              const projs = projsFiltrados.filter(p => p.gerente_site === gerente)
+              const projs = itensFiltrados.filter(p => p.gerente_site === gerente)
               if (!projs.length) return null
               const gerEnviou = gerentesQueEnviaram.has(gerente)
               return (
@@ -609,7 +641,7 @@ export default function Forecast({ perfil, onLogout }) {
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",marginTop:8,background:RTT.cinzaEscuro,borderRadius:7,border:`1px solid ${RTT.cinzaBorda}`}}>
               <div style={{display:"flex",flexDirection:"column",gap:4}}>
                 <div style={{fontSize:10,color:RTT.cinzaTexto}}>
-                  {projsFiltrados.length} projetos · Prazo: <strong style={{color:RTT.branco}}>sexta-feira às 12h</strong> · Semana {semana}/{anoAtual}
+                  {itensFiltrados.length} projetos · Prazo: <strong style={{color:RTT.branco}}>sexta-feira às 12h</strong> · Semana {semana}/{anoAtual}
                 </div>
                 {/* Badge de status de envio (gestor) */}
                 {perfil.perfil==='gestor' && (
