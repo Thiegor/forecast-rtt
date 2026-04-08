@@ -154,7 +154,7 @@ export default function Forecast({ perfil, onLogout }) {
   const semana = getISOWeek(now)
   const anoAtual = now.getFullYear()
   const mesAtualIdx = now.getMonth()
-  const janelaBloqueada = !isJanelaAberta()
+  const janelaBloqueada = perfil.perfil !== 'admin' && !isJanelaAberta()
 
   // semana anterior (trata virada de ano)
   const semanaPrev = semana === 1 ? 52 : semana - 1
