@@ -207,10 +207,19 @@ export default function Forecast({ perfil, onLogout }) {
         .from('projetos').select('*').eq('status','Vigente').order('identificacao')
       setProjetosCadastro(cadastro || [])
 
-      // semana atual — para pré-preencher inputs e verificar status de envio
+      // Início da janela atual: última quinta-feira às 9h
+      const agora = new Date()
+      const inicioJanela = new Date(agora)
+      const diasDesdeQuinta = (agora.getDay() + 7 - 4) % 7
+      inicioJanela.setDate(agora.getDate() - diasDesdeQuinta)
+      inicioJanela.setHours(9, 0, 0, 0)
+
+      // semana atual — apenas submissões da janela aberta (quinta 9h em diante)
+      // garante que dados de testes anteriores não apareçam como "enviado"
       const { data: fc } = await supabase
         .from('forecast_semanal').select('*')
         .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)
+        .gte('data_coleta', inicioJanela.toISOString())
       setForecastSemana(fc || [])
 
       // RFC s-1: usa a semana mais recente disponível no banco (não necessariamente semana-1)
