@@ -5,9 +5,15 @@
 | Variável | Valor |
 |---|---|
 | **URL Supabase** | `https://xiwuefhgkteqgmbnsrrb.supabase.co` |
-| **API Key** | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhpd3VlZmhna3RlcWdtYm5zcnJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNTE1NDMsImV4cCI6MjA5MDcyNzU0M30.EUs2WgqySNe0fusiHcIDo1s2PkO5LfuL3TAMgEaIovk` |
+| **Anon Key** (leitura pública) | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhpd3VlZmhna3RlcWdtYm5zcnJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNTE1NDMsImV4cCI6MjA5MDcyNzU0M30.EUs2WgqySNe0fusiHcIDo1s2PkO5LfuL3TAMgEaIovk` |
+| **Service Role Key** (escrita — usar nos flows) | Obter em: Supabase Dashboard → Settings → API → **service_role** (secret) |
 | **App URL** | `https://thiegor.github.io/forecast-rtt` |
 | **Site SharePoint** | `https://rematiptopbr.sharepoint.com/sites/Contratos` |
+
+> ⚠️ **IMPORTANTE — qual chave usar nos flows:**
+> Os flows escrevem no banco (upsert). A RLS do Supabase só permite escrita com a **service_role key**.
+> Use a service_role key em **todos os headers `apikey` e `Authorization`** das ações HTTP dos flows.
+> A anon key serve apenas para leituras públicas (usada no app React).
 
 ---
 
@@ -47,14 +53,37 @@ Acesse **make.powerautomate.com → Criar → Fluxo automatizado na nuvem**
 
 - **Input:** `value` da ação anterior (selecionar via dynamic content)
 
-Dentro do loop, adicionar **HTTP**:
+Dentro do loop, adicionar **duas ações**:
+
+---
+
+##### Ação 2a: Compose — montar o JSON
+
+| Campo | Valor |
+|---|---|
+| Ação | **Data Operations → Compose** |
+| Nome | `Compose_Projeto` |
+
+**Inputs** — clicar no botão **fx** (Expression) e colar:
+
+```
+json(concat('{"cod_projeto":"', replace(string(items('Apply_to_each')?['Cód_x002e_ Projeto']), '"', ''), '","identificacao":"', replace(string(items('Apply_to_each')?['Identificação']), '"', '\"'), '","cliente":"', replace(string(items('Apply_to_each')?['Cliente']), '"', '\"'), '","gerente_site":"', replace(string(items('Apply_to_each')?['Gerente Site']), '"', '\"'), '","gerente_regional":"', replace(string(items('Apply_to_each')?['Gerente Regional']), '"', '\"'), '","status":"', replace(string(items('Apply_to_each')?['Status']), '"', '\"'), '"}'))
+```
+
+> ⚠️ **ATENÇÃO — nome da coluna codificado:** O Power Automate substitui caracteres especiais nos nomes das colunas. O ponto em `Cód. Projeto` vira `_x002e_`, ficando **`Cód_x002e_ Projeto`** (com espaço após o `_`). Usar exatamente esse nome na expressão.
+>
+> O campo `cod_projeto` foi alterado para `text` no Supabase, então todos os valores (inclusive "005/26", "CSN23-1") são aceitos sem conversão.
+
+---
+
+##### Ação 2b: HTTP — upsert no Supabase
 
 | Campo | Valor |
 |---|---|
 | Method | POST |
 | URI | `https://xiwuefhgkteqgmbnsrrb.supabase.co/rest/v1/projetos` |
 
-**Headers** (adicionar um a um clicando em "+ Add new parameter" → Headers):
+**Headers:**
 
 | Chave | Valor |
 |---|---|
@@ -63,15 +92,13 @@ Dentro do loop, adicionar **HTTP**:
 | `Content-Type` | `application/json` |
 | `Prefer` | `resolution=merge-duplicates` |
 
-**Body** (clicar em "Switch to input entire array" se aparecer, depois colar como expressão):
-
-Clicar no campo Body → botão **fx** (Expression) → colar:
+**Body** — clicar em **fx** (Expression) e colar:
 
 ```
-concat('{"cod_projeto":', items('Apply_to_each')?['Cód. Projeto'], ',"identificacao":"', replace(items('Apply_to_each')?['Identificação'], '"', '\"'), '","cliente":"', replace(items('Apply_to_each')?['Cliente'], '"', '\"'), '","gerente_site":"', replace(items('Apply_to_each')?['Gerente Site'], '"', '\"'), '","gerente_regional":"', replace(items('Apply_to_each')?['Gerente Regional'], '"', '\"'), '","status":"', replace(items('Apply_to_each')?['Status'], '"', '\"'), '"}')
+outputs('Compose_Projeto')
 ```
 
-> ⚠️ **Importante:** os nomes dos campos entre `?['...']` devem ser exatamente iguais aos cabeçalhos das colunas em `tbl_Projetos`. Abrir o Excel e confirmar os nomes antes de salvar.
+> Isso usa exatamente o JSON montado no passo anterior. O nome `Compose_Projeto` deve bater com o nome dado à ação Compose.
 
 ---
 
@@ -159,32 +186,139 @@ Repetir para mes 2 (Fev), 3 (Mar) ... 12 (Dez), trocando `"mes":1` e `?['Jan']` 
 
 ---
 
-## Flow 3 — RTT: Exportar RFC Semanal
+## Flow 3a — RTT: Exportar RFC Semanal (automático)
 
-**O que faz:** Toda sexta às 12h, exporta o forecast da semana atual do Supabase para uma planilha no SharePoint. Também aceita disparo via webhook (botão no app para o admin).
+**O que faz:** Toda sexta às 12h, lê o forecast do Supabase e atualiza as colunas `RB26`–`RB48` da `tbl_RFC2026` via **Office Script** — apenas 4 ações no flow.
 
-### Como criar no Power Automate
-
-**Criar → Fluxo automatizado na nuvem**
+> **Por que dois flows (3a e 3b)?** O Power Automate não suporta Recurrence + HTTP trigger no mesmo flow.
 
 ---
 
-#### Trigger A: Recurrence
+### Passo 0: Criar o Office Script no Excel
+
+Abrir `Painel_de_Receita_Atual.xlsx` no SharePoint → menu **Automate** → **New Script** → colar o código abaixo → salvar como **`AtualizarRFC`**:
+
+```typescript
+function main(workbook: ExcelScript.Workbook, forecastJson: string) {
+  const forecast: { chave_rfc: string; mes_referencia: string; receita_prevista: number }[] = JSON.parse(forecastJson);
+
+  const table = workbook.getTable("tbl_RFC2026");
+  const headerRow = table.getHeaderRowRange().getValues()[0] as string[];
+  const dataRange = table.getRangeBetweenHeaderAndTotal();
+  const values = dataRange.getValues();
+
+  const mesParaColuna: Record<string, string> = {
+    "Janeiro": "RB26", "Fevereiro": "RB28", "Março": "RB30",
+    "Abril": "RB32", "Maio": "RB34", "Junho": "RB36",
+    "Julho": "RB38", "Agosto": "RB40", "Setembro": "RB42",
+    "Outubro": "RB44", "Novembro": "RB46", "Dezembro": "RB48"
+  };
+
+  const chaveIdx = headerRow.indexOf("Chave");
+  const colIndices: Record<string, number> = {};
+  for (const [mes, col] of Object.entries(mesParaColuna)) {
+    colIndices[mes] = headerRow.indexOf(col);
+  }
+
+  const chaveToRow: Record<string, number> = {};
+  for (let i = 0; i < values.length; i++) {
+    chaveToRow[String(values[i][chaveIdx])] = i;
+  }
+
+  for (const item of forecast) {
+    const rowIdx = chaveToRow[item.chave_rfc];
+    const colIdx = colIndices[item.mes_referencia];
+    if (rowIdx !== undefined && colIdx !== undefined && colIdx >= 0) {
+      values[rowIdx][colIdx] = item.receita_prevista;
+    }
+  }
+
+  dataRange.setValues(values);
+}
+```
+
+> O script recebe o JSON do Supabase, localiza cada linha pelo campo `Chave` e atualiza apenas as colunas RB do mês correspondente. Linhas sem forecast ficam intactas.
+
+---
+
+### Criar o flow: Fluxo automatizado na nuvem
+
+#### Trigger: Recurrence
 
 | Campo | Valor |
 |---|---|
-| Interval | 1 |
-| Frequency | Week |
-| On these days | Friday |
-| At these hours | 12 |
-| At these minutes | 0 |
-| Time zone | (UTC-03:00) Brasília |
+| Interval | `1` |
+| Frequency | `Week` |
+| On these days | `Friday` |
+| At these hours | `12` |
+| At these minutes | `0` |
+| Time zone | `(UTC-03:00) Brasília` |
 
 ---
 
-#### Trigger B: When an HTTP request is received (adicionar como trigger paralelo)
+#### Ação 1: Initialize variable — semanaAtual
 
-- Deixar o Schema em branco ou colar:
+| Campo | Valor |
+|---|---|
+| Name | `semanaAtual` |
+| Type | `Integer` |
+| Value (fx) | `add(int(div(sub(dayOfYear(utcNow()), 1), 7)), 1)` |
+
+---
+
+#### Ação 2: Initialize variable — anoAtual
+
+| Campo | Valor |
+|---|---|
+| Name | `anoAtual` |
+| Type | `Integer` |
+| Value (fx) | `int(formatDateTime(utcNow(), 'yyyy'))` |
+
+---
+
+#### Ação 3: HTTP — buscar forecast da semana no Supabase
+
+| Campo | Valor |
+|---|---|
+| Method | `GET` |
+| URI (fx) | `concat('https://xiwuefhgkteqgmbnsrrb.supabase.co/rest/v1/forecast_semanal?semana_coleta=eq.', variables('semanaAtual'), '&ano_referencia=eq.', variables('anoAtual'), '&select=chave_rfc,mes_referencia,receita_prevista')` |
+| `apikey` | service_role key |
+| `Authorization` | `Bearer <service_role key>` |
+
+---
+
+#### Ação 4: Run script — AtualizarRFC
+
+| Campo | Valor |
+|---|---|
+| Conector | Excel Online (Business) |
+| Location | SharePoint |
+| Document Library | Documents |
+| File | `/General/Gerenciamento/Apresentação de Resultados/Painel de Receita Atual/Painel_de_Receita_Atual.xlsx` |
+| Script | `AtualizarRFC` |
+| forecastJson (fx) | `string(body('HTTP'))` |
+
+---
+
+#### Ação 5: Post message no Teams
+
+| Campo | Valor |
+|---|---|
+| Team | (time da RTT) |
+| Channel | (canal Performance e Receita) |
+| Message | `RFC Semana @{variables('semanaAtual')}/@{variables('anoAtual')} atualizado no Painel de Receita.` |
+
+---
+
+## Flow 3b — RTT: Atualizar RFC (webhook admin)
+
+**O que faz:** Idêntico ao Flow 3a, disparado pelo botão "Atualizar RFC Exportado" no app.
+
+**Criar → Fluxo automatizado na nuvem**
+
+#### Trigger: When an HTTP request is received
+
+Schema:
 ```json
 {
   "type": "object",
@@ -195,78 +329,13 @@ Repetir para mes 2 (Fev), 3 (Mar) ... 12 (Dez), trocando `"mes":1` e `?['Jan']` 
 }
 ```
 
-> Após salvar, o Power Automate gera a **HTTP POST URL**. Copiar essa URL e colocar na constante `WEBHOOK_RFC_URL` no topo de `src/pages/Forecast.js`.
+> Após salvar, copiar a **HTTP POST URL** gerada e colar em `WEBHOOK_RFC_URL` no topo de `src/pages/Forecast.js`.
 
----
+#### Ações 1–5: idênticas ao Flow 3a, exceto:
 
-#### Ação 1: Initialize variable — semanaAtual
+**Ação 1 — semanaAtual (fx):** `triggerBody()?['semana']`
 
-| Campo | Valor |
-|---|---|
-| Name | `semanaAtual` |
-| Type | Integer |
-| Value | (expressão fx) `if(equals(triggerBody()?['semana'], null), int(div(sub(dayOfYear(utcNow()), 1), 7)), triggerBody()?['semana'])` |
-
-> Esta expressão usa o número da semana do webhook se vier do app, ou calcula a semana aproximada pela data se vier da recorrência. (Ajuste fino pode ser feito depois.)
-
----
-
-#### Ação 2: Initialize variable — anoAtual
-
-| Campo | Valor |
-|---|---|
-| Name | `anoAtual` |
-| Type | Integer |
-| Value | (expressão fx) `if(equals(triggerBody()?['ano'], null), int(formatDateTime(utcNow(), 'yyyy')), triggerBody()?['ano'])` |
-
----
-
-#### Ação 3: HTTP — buscar forecast da semana
-
-| Campo | Valor |
-|---|---|
-| Method | GET |
-| URI | (expressão fx) `concat('https://xiwuefhgkteqgmbnsrrb.supabase.co/rest/v1/forecast_semanal?semana_coleta=eq.', variables('semanaAtual'), '&ano_referencia=eq.', variables('anoAtual'), '&select=chave_rfc,identificacao,grupo,gerente_site,mes_referencia,receita_prevista,confianca,observacoes,data_coleta')` |
-| apikey (header) | (igual aos outros flows) |
-| Authorization (header) | (igual) |
-
----
-
-#### Ação 4: Parse JSON
-
-| Campo | Valor |
-|---|---|
-| Content | `body('HTTP')` |
-| Schema | Clicar "Generate from sample" e colar: `[{"chave_rfc":"x","identificacao":"x","grupo":"x","gerente_site":"x","mes_referencia":"x","receita_prevista":0,"confianca":"x","observacoes":"x","data_coleta":"x"}]` |
-
----
-
-#### Ação 5: Apply to each — escrever no Excel
-
-- **Input:** `body('Parse_JSON')`
-
-Dentro do loop — **Add a row into a table**:
-
-| Campo | Valor |
-|---|---|
-| Conector | Excel Online (Business) |
-| Location | SharePoint |
-| File | `/General/Gerenciamento/Apresentação de Resultados/Painel de Receita Atual/RFC_Semanal.xlsx` |
-| Table | `tbl_RFC_Semanal` |
-
-> ⚠️ Criar o arquivo `RFC_Semanal.xlsx` no SharePoint com uma tabela `tbl_RFC_Semanal` contendo as colunas: `chave_rfc, identificacao, grupo, gerente_site, mes_referencia, receita_prevista, confianca, observacoes, data_coleta, semana, ano`
-
-Mapear cada campo do Dynamic content para a coluna correspondente.
-
----
-
-#### Ação 6: Post message no Teams
-
-| Campo | Valor |
-|---|---|
-| Team | (selecionar o time da RTT) |
-| Channel | (canal de Performance e Receita) |
-| Message | `📊 RFC Semana @{variables('semanaAtual')}/@{variables('anoAtual')} exportado para o SharePoint.` |
+**Ação 2 — anoAtual (fx):** `triggerBody()?['ano']`
 
 ---
 

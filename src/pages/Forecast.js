@@ -213,10 +213,18 @@ export default function Forecast({ perfil, onLogout }) {
         .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)
       setForecastSemana(fc || [])
 
-      // semana anterior — para coluna RFC s-1
+      // RFC s-1: usa a semana mais recente disponível no banco (não necessariamente semana-1)
+      const { data: ultimaSemanaData } = await supabase
+        .from('forecast_semanal')
+        .select('semana_coleta')
+        .eq('ano_referencia', anoAtual)
+        .order('semana_coleta', { ascending: false })
+        .limit(1)
+        .single()
+      const semanaRef = ultimaSemanaData?.semana_coleta ?? semanaPrev
       const { data: fcPrev } = await supabase
         .from('forecast_semanal').select('*')
-        .eq('semana_coleta', semanaPrev).eq('ano_referencia', anoPrev)
+        .eq('semana_coleta', semanaRef).eq('ano_referencia', anoAtual)
       setForecastSemanaAnterior(fcPrev || [])
 
       // BP anual — todos os meses do ano atual
@@ -391,11 +399,15 @@ export default function Forecast({ perfil, onLogout }) {
   bpAnual.forEach(b => {
     if (!itensMap[b.chave_rfc]) {
       const proj = projetosCadastro.find(p => p.cod_projeto === b.cod_projeto)
+      // chave_rfc foi construída como identificacao+grupo sem separador — remove o sufixo do grupo
+      const identificacaoLimpa = b.grupo
+        ? b.chave_rfc.replace(new RegExp(b.grupo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'), '').trim()
+        : b.chave_rfc
       itensMap[b.chave_rfc] = {
         chave_rfc: b.chave_rfc,
         cod_projeto: b.cod_projeto,
         grupo: b.grupo,
-        identificacao: proj?.identificacao || b.chave_rfc,
+        identificacao: identificacaoLimpa || proj?.identificacao || b.chave_rfc,
         gerente_site: proj?.gerente_site || '',
         gerente_regional: proj?.gerente_regional || '',
         cliente: proj?.cliente || '',
@@ -497,26 +509,28 @@ export default function Forecast({ perfil, onLogout }) {
           <div style={{textAlign:"center",padding:"80px",color:RTT.cinzaTexto,fontSize:14}}>Carregando projetos...</div>
         ) : (
           <>
-            {/* CABEÇALHO DAS COLUNAS */}
-            <div style={{display:"grid",gridTemplateColumns:"280px 1fr 1fr 1fr 36px",gap:4,padding:"0 12px"}}>
-              <div/>
-              {MESES.map(m=>(
-                <div key={m.key} style={{textAlign:"center",padding:"5px 0",borderRadius:"5px 5px 0 0",background:RTT.vermelhoFundo,borderTop:`2px solid ${RTT.vermelho}`,borderLeft:"1px solid rgba(227,30,36,0.15)",borderRight:"1px solid rgba(227,30,36,0.15)"}}>
-                  <span style={{fontSize:10,fontWeight:700,color:RTT.vermelho,textTransform:"uppercase",letterSpacing:"0.08em"}}>{m.label.slice(0,3).toUpperCase()}/{m.ano}</span>
-                </div>
-              ))}
-              <div/>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"280px 1fr 1fr 1fr 36px",gap:4,padding:"0 12px",marginBottom:4}}>
-              <div style={{fontSize:8,color:RTT.cinzaTexto,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:700,padding:"4px 0"}}>Projeto</div>
-              {MESES.map(m=>(
-                <div key={m.key} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:3,padding:"3px 6px",background:"rgba(227,30,36,0.03)",borderLeft:"1px solid rgba(227,30,36,0.1)",borderRight:"1px solid rgba(227,30,36,0.1)",borderBottom:"1px solid rgba(227,30,36,0.1)"}}>
-                  {["BP","RFC s-1","Forecast"].map(sub=>(
-                    <div key={sub} style={{fontSize:8,color:sub==="Forecast"?RTT.vermelho:RTT.cinzaTexto,textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"center",fontWeight:sub==="Forecast"?700:400}}>{sub}</div>
-                  ))}
-                </div>
-              ))}
-              <div/>
+            {/* CABEÇALHO DAS COLUNAS — fixo ao rolar */}
+            <div style={{position:"sticky",top:56,zIndex:20,background:RTT.preto,paddingBottom:2}}>
+              <div style={{display:"grid",gridTemplateColumns:"280px 1fr 1fr 1fr 36px",gap:4,padding:"0 12px"}}>
+                <div/>
+                {MESES.map(m=>(
+                  <div key={m.key} style={{textAlign:"center",padding:"6px 0",borderRadius:"5px 5px 0 0",background:"rgba(227,30,36,0.12)",borderTop:`2px solid ${RTT.vermelho}`,borderLeft:"1px solid rgba(227,30,36,0.2)",borderRight:"1px solid rgba(227,30,36,0.2)"}}>
+                    <span style={{fontSize:11,fontWeight:800,color:RTT.vermelho,textTransform:"uppercase",letterSpacing:"0.08em"}}>{m.label.slice(0,3).toUpperCase()}/{m.ano}</span>
+                  </div>
+                ))}
+                <div/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"280px 1fr 1fr 1fr 36px",gap:4,padding:"0 12px",marginBottom:4}}>
+                <div style={{fontSize:9,color:RTT.cinzaClaro,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:700,padding:"4px 0"}}>Projeto</div>
+                {MESES.map(m=>(
+                  <div key={m.key} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:3,padding:"4px 6px",background:"rgba(227,30,36,0.05)",borderLeft:"1px solid rgba(227,30,36,0.15)",borderRight:"1px solid rgba(227,30,36,0.15)",borderBottom:"1px solid rgba(227,30,36,0.15)"}}>
+                    {["BP","RFC s-1","Forecast"].map(sub=>(
+                      <div key={sub} style={{fontSize:9,color:sub==="Forecast"?RTT.vermelho:sub==="RFC s-1"?RTT.cinzaClaro:RTT.amarelo,textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"center",fontWeight:700}}>{sub}</div>
+                    ))}
+                  </div>
+                ))}
+                <div/>
+              </div>
             </div>
 
             {/* LINHAS POR GERENTE */}
