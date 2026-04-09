@@ -407,12 +407,12 @@ export default function Forecast({ perfil, onLogout }) {
 
   // Derivar lista de itens: UNIÃO de chave_rfc em bp_anual + forecast_semanal do ano
   const itensMap = {}
+  const GRUPOS_BP = ['Backlog', 'PIPE', 'Renovação']
   bpAnual.forEach(b => {
     if (!itensMap[b.chave_rfc]) {
-      // Apenas projetos com código numérico inteiro e status Vigente (projetosCadastro já filtra Vigente)
-      if (!b.cod_projeto || !/^\d+$/.test(String(b.cod_projeto))) return
+      // BP: qualquer projeto, desde que grupo seja Backlog / PIPE / Renovação
+      if (!GRUPOS_BP.includes(b.grupo)) return
       const proj = projetosCadastro.find(p => p.cod_projeto === b.cod_projeto)
-      if (!proj) return // projeto não é Vigente — ignorar
       // chave_rfc foi construída como identificacao+grupo sem separador — remove o sufixo do grupo
       const identificacaoLimpa = b.grupo
         ? b.chave_rfc.replace(new RegExp(b.grupo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'), '').trim()
@@ -421,10 +421,10 @@ export default function Forecast({ perfil, onLogout }) {
         chave_rfc: b.chave_rfc,
         cod_projeto: b.cod_projeto,
         grupo: b.grupo,
-        identificacao: identificacaoLimpa || proj.identificacao,
-        gerente_site: proj.gerente_site || '',
-        gerente_regional: proj.gerente_regional || '',
-        cliente: proj.cliente || '',
+        identificacao: proj?.identificacao || identificacaoLimpa,
+        gerente_site: proj?.gerente_site || '',
+        gerente_regional: proj?.gerente_regional || '',
+        cliente: proj?.cliente || '',
       }
     }
   })
