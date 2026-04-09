@@ -409,7 +409,10 @@ export default function Forecast({ perfil, onLogout }) {
   const itensMap = {}
   bpAnual.forEach(b => {
     if (!itensMap[b.chave_rfc]) {
+      // Apenas projetos com código numérico inteiro e status Vigente (projetosCadastro já filtra Vigente)
+      if (!b.cod_projeto || !/^\d+$/.test(String(b.cod_projeto))) return
       const proj = projetosCadastro.find(p => p.cod_projeto === b.cod_projeto)
+      if (!proj) return // projeto não é Vigente — ignorar
       // chave_rfc foi construída como identificacao+grupo sem separador — remove o sufixo do grupo
       const identificacaoLimpa = b.grupo
         ? b.chave_rfc.replace(new RegExp(b.grupo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'), '').trim()
@@ -418,23 +421,26 @@ export default function Forecast({ perfil, onLogout }) {
         chave_rfc: b.chave_rfc,
         cod_projeto: b.cod_projeto,
         grupo: b.grupo,
-        identificacao: identificacaoLimpa || proj?.identificacao || b.chave_rfc,
-        gerente_site: proj?.gerente_site || '',
-        gerente_regional: proj?.gerente_regional || '',
-        cliente: proj?.cliente || '',
+        identificacao: identificacaoLimpa || proj.identificacao,
+        gerente_site: proj.gerente_site || '',
+        gerente_regional: proj.gerente_regional || '',
+        cliente: proj.cliente || '',
       }
     }
   })
   forecastAnual.forEach(f => {
     if (!itensMap[f.chave_rfc]) {
+      // Apenas se existir projeto Vigente com código numérico correspondente
+      const proj = projetosCadastro.find(p => p.cod_projeto === f.cod_projeto)
+      if (!proj || !f.cod_projeto || !/^\d+$/.test(String(f.cod_projeto))) return
       itensMap[f.chave_rfc] = {
         chave_rfc: f.chave_rfc,
-        cod_projeto: null,
+        cod_projeto: f.cod_projeto,
         grupo: f.grupo,
-        identificacao: f.identificacao,
-        gerente_site: f.gerente_site,
-        gerente_regional: '',
-        cliente: '',
+        identificacao: proj.identificacao,
+        gerente_site: proj.gerente_site || '',
+        gerente_regional: proj.gerente_regional || '',
+        cliente: proj.cliente || '',
       }
     }
   })
