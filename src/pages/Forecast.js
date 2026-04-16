@@ -371,8 +371,6 @@ export default function Forecast({ perfil, onLogout }) {
         { key:'mes3', label:mes3, ano:ano3 },
       ]
 
-      console.log('[Enviar] itensFiltrados:', itensFiltrados.length, 'valores:', JSON.stringify(valores))
-
       for (const proj of itensFiltrados) {
         const chave_rfc = proj.chave_rfc
         for (const m of mesesMap) {
@@ -380,7 +378,6 @@ export default function Forecast({ perfil, onLogout }) {
           const valStr = valores[chave_rfc]?.[m.key]
           const valExistente = forecastSemana.find(f => f.chave_rfc === chave_rfc && f.mes_referencia === m.label)?.receita_prevista
           const val = valStr !== undefined ? parseFloat(valStr) : valExistente
-          console.log('[Enviar]', chave_rfc, m.key, '| valStr:', valStr, '| valExistente:', valExistente, '| val:', val)
           if (!val || val === 0) continue
 
           const confianca = valores[chave_rfc]?.[m.key+'_confianca']
@@ -408,7 +405,6 @@ export default function Forecast({ perfil, onLogout }) {
         }
       }
 
-      console.log('[Enviar] registros montados:', registros.length, registros)
       if (registros.length === 0) {
         setErro('Nenhum valor preenchido.')
         return
