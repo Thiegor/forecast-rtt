@@ -30,7 +30,7 @@ const GRUPO_CORES = {
 const MESES_LONGOS = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
 
 // URL do webhook Power Automate — preencher após criar o flow "Exportar RFC Semanal"
-const WEBHOOK_RFC_URL = ''
+const WEBHOOK_RFC_URL = 'https://default3ba4e9dd629e40049c62708d327b58.a5.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/dc05767c636d47efba1a2047b56c8dae/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=NHSaWdpp9beT-x-B3VJfYXpuf_en2MKdr2u6OW9mlhw'
 
 const CONFIANCA_OPTS = [
   { label: "Confirmado", cor: "#22c55e", corFundo: "rgba(34,197,94,0.15)", corBorda: "rgba(34,197,94,0.4)" },
@@ -69,7 +69,7 @@ function calcPct(a, b) {
 
 function Delta({ val, refVal }) {
   const p = calcPct(val, refVal)
-  if (p === null || !val) return <span style={{color:RTT.cinzaTexto,fontSize:9}}>—</span>
+  if (p === null || !val || !refVal) return null
   const cor = p > 5 ? RTT.verde : p < -5 ? RTT.vermelho : RTT.amarelo
   return <span style={{fontSize:9,fontWeight:700,color:cor}}>{p>0?"▲":"▼"}{Math.abs(p).toFixed(0)}%</span>
 }
@@ -84,21 +84,41 @@ function fmtDataColeta(iso) {
   return `${dia}/${mes} ${h}:${min}`
 }
 
-function PainelAnual({ proj, mesAtualIdx, bpAnual, forecastAnual, onClose }) {
+function PainelAnual({ proj, mesAtualIdx, forecastAnual, onClose }) {
   const anoAtual = new Date().getFullYear()
   const mesesRolantes = [mesAtualIdx, mesAtualIdx+1, mesAtualIdx+2]
-  const projBP = bpAnual.filter(b => b.chave_rfc === proj.chave_rfc && b.ano === anoAtual)
-  const totalBP = projBP.reduce((s,b) => s + (b.valor_bp||0), 0)
+  const [projBP, setProjBP] = useState([])
+
+  useEffect(() => {
+    // Busca por cod_projeto (agrega todos os grupos do projeto) ou por chave_rfc como fallback
+    const query = supabase.from('bp_anual').select('chave_rfc,mes,valor_bp').eq('ano', anoAtual)
+    const p = proj.cod_projeto ? query.eq('cod_projeto', proj.cod_projeto) : query.eq('chave_rfc', proj.chave_rfc)
+    p.then(({ data }) => setProjBP(data || []))
+  }, [proj.cod_projeto, proj.chave_rfc, anoAtual])
+
+  // Soma BP por mês agregando todos os grupos do projeto
+  const bpPorMes = {}
+  projBP.forEach(b => { bpPorMes[b.mes] = (bpPorMes[b.mes] || 0) + (Number(b.valor_bp) || 0) })
+  const totalBP = Object.values(bpPorMes).reduce((s, v) => s + v, 0)
 
   // RFC atual por mês: registro com maior semana_coleta
-  const rfcPorMes = {}
+  // RFC por mês: usa as chave_rfc do bp_anual do projeto (cod_projeto pode ser null no forecast)
+  const chavesRfcProjeto = new Set(projBP.map(b => b.chave_rfc))
+  const melhorPorChaveMes = {}
   forecastAnual
-    .filter(f => f.chave_rfc === proj.chave_rfc && f.ano_referencia === anoAtual)
+    .filter(f => chavesRfcProjeto.has(f.chave_rfc) && f.ano_referencia === anoAtual)
     .forEach(f => {
-      const key = f.mes_referencia
-      if (!rfcPorMes[key] || f.semana_coleta > rfcPorMes[key].semana_coleta)
-        rfcPorMes[key] = f
+      const key = f.chave_rfc + '|' + f.mes_referencia
+      if (!melhorPorChaveMes[key] || f.semana_coleta > melhorPorChaveMes[key].semana_coleta)
+        melhorPorChaveMes[key] = f
     })
+  const rfcPorMes = {}
+  Object.values(melhorPorChaveMes).forEach(f => {
+    rfcPorMes[f.mes_referencia] = (rfcPorMes[f.mes_referencia] || 0) + (f.receita_prevista || 0)
+  })
+  const totalRFC = Object.values(rfcPorMes).reduce((s, v) => s + v, 0)
+  const deltaAnual = totalBP > 0 && totalRFC > 0 ? ((totalRFC - totalBP) / totalBP * 100) : null
+  const deltaAnualCor = deltaAnual === null ? RTT.cinzaClaro : deltaAnual > 5 ? RTT.verde : deltaAnual < -5 ? RTT.vermelho : RTT.amarelo
 
   const F = `Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`
   return (
@@ -109,25 +129,29 @@ function PainelAnual({ proj, mesAtualIdx, bpAnual, forecastAnual, onClose }) {
         <div style={{padding:"20px 24px 16px",borderBottom:`1px solid ${RTT.cinzaBorda}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
             <div style={{flex:1,marginRight:12}}>
-              <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:4,fontFamily:F}}>Visão Anual {anoAtual}</div>
+              <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:4,fontFamily:F}}>Visão Anual {anoAtual} — todos os grupos</div>
               <div style={{fontSize:14,fontWeight:600,color:RTT.branco,lineHeight:1.3,fontFamily:F}}>{proj.identificacao}</div>
               <div style={{display:"flex",gap:8,marginTop:6,alignItems:"center"}}>
-                {proj.grupo && <span style={{fontSize:10,padding:"1px 7px",borderRadius:4,background:RTT.cinzaMedio,color:RTT.cinzaClaro,border:`1px solid ${RTT.cinzaBorda2}`,fontFamily:F}}>{proj.grupo}</span>}
                 <span style={{fontSize:11,color:RTT.cinzaTexto,fontFamily:F}}>{proj.gerente_site}</span>
               </div>
             </div>
             <button onClick={onClose} style={{background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,color:RTT.cinzaClaro,width:28,height:28,borderRadius:6,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}>✕</button>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            {[
-              {l:"BP Total "+anoAtual, v:`R$ ${fmt(totalBP)}`},
-              {l:"Média mensal",       v:`R$ ${fmt(totalBP/12)}`},
-            ].map(k=>(
-              <div key={k.l} style={{background:RTT.cinzaMedio,borderRadius:6,padding:"8px 12px",border:`1px solid ${RTT.cinzaBorda}`}}>
-                <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:2,fontFamily:F}}>{k.l}</div>
-                <div style={{fontSize:14,fontWeight:700,color:RTT.amarelo,fontFamily:F}}>{k.v}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div style={{background:RTT.cinzaMedio,borderRadius:6,padding:"8px 12px",border:`1px solid ${RTT.cinzaBorda}`}}>
+              <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:2,fontFamily:F}}>BP Total {anoAtual}</div>
+              <div style={{fontSize:14,fontWeight:700,color:RTT.amarelo,fontFamily:F}}>R$ {fmt(totalBP)}</div>
+            </div>
+            <div style={{background:RTT.cinzaMedio,borderRadius:6,padding:"8px 12px",border:`1px solid ${RTT.cinzaBorda}`}}>
+              <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:2,fontFamily:F}}>RFC Total</div>
+              <div style={{fontSize:14,fontWeight:700,color:totalRFC?RTT.branco:RTT.cinzaTexto,fontFamily:F}}>{totalRFC ? `R$ ${fmt(totalRFC)}` : "—"}</div>
+            </div>
+            <div style={{background:RTT.cinzaMedio,borderRadius:6,padding:"8px 12px",border:`1px solid ${RTT.cinzaBorda}`}}>
+              <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:2,fontFamily:F}}>RFC vs BP</div>
+              <div style={{fontSize:14,fontWeight:700,color:deltaAnualCor,fontFamily:F}}>
+                {deltaAnual !== null ? `${deltaAnual>0?'▲':'▼'}${Math.abs(deltaAnual).toFixed(1)}%` : "—"}
               </div>
-            ))}
+            </div>
           </div>
         </div>
         {/* TABELA MENSAL */}
@@ -139,10 +163,8 @@ function PainelAnual({ proj, mesAtualIdx, bpAnual, forecastAnual, onClose }) {
         <div style={{flex:1,overflowY:"auto"}}>
           {MESES_LONGOS.map((mes,i)=>{
             const isAtual = mesesRolantes.includes(i)
-            const bpReg = projBP.find(b => b.mes === i+1)
-            const bp = bpReg?.valor_bp || 0
-            const rfcReg = rfcPorMes[mes]
-            const rfc = rfcReg?.receita_prevista || 0
+            const bp = bpPorMes[i+1] || 0
+            const rfc = rfcPorMes[mes] || 0
             const delta = bp > 0 && rfc > 0 ? ((rfc - bp) / bp * 100) : null
             const deltaCor = delta === null ? RTT.cinzaTexto : delta > 5 ? RTT.verde : delta < -5 ? RTT.vermelho : RTT.amarelo
             return (
@@ -206,7 +228,7 @@ export default function Forecast({ perfil, onLogout }) {
     async function carregar() {
       setLoading(true)
       const { data: cadastro } = await supabase
-        .from('projetos').select('*').eq('status','Vigente').order('identificacao')
+        .from('projetos').select('*').order('identificacao')
       setProjetosCadastro(cadastro || [])
 
       // Início da janela atual: última quinta-feira às 9h
@@ -238,10 +260,12 @@ export default function Forecast({ perfil, onLogout }) {
         .eq('semana_coleta', semanaRef).eq('ano_referencia', anoAtual)
       setForecastSemanaAnterior(fcPrev || [])
 
-      // BP anual — todos os meses do ano atual
+      // BP — apenas os 3 meses exibidos no formulário (evita limite de 1000 linhas do Supabase)
+      const mesesNums = [mesAtualIdx + 1, (mesAtualIdx + 1) % 12 + 1, (mesAtualIdx + 2) % 12 + 1]
       const { data: bp } = await supabase
         .from('bp_anual').select('*')
         .eq('ano', anoAtual)
+        .in('mes', mesesNums)
       setBpAnual(bp || [])
 
       // Forecast anual — todos os registros do ano atual (para PainelAnual)
@@ -310,6 +334,22 @@ export default function Forecast({ perfil, onLogout }) {
     return reg?.valor_bp || 0
   }
 
+  // Replicar RFC s-1: copia valores da semana anterior para os inputs da semana atual
+  function replicarRFC(proj) {
+    const update = {}
+    MESES.forEach(m => {
+      const fc = forecastSemanaAnterior.find(f => f.chave_rfc === proj.chave_rfc && f.mes_referencia === m.label)
+      if (fc && fc.receita_prevista > 0) {
+        update[m.key] = fc.receita_prevista
+        if (fc.confianca)   update[m.key + '_confianca'] = fc.confianca
+        if (fc.observacoes) update[m.key + '_obs'] = fc.observacoes
+      }
+    })
+    if (Object.keys(update).length > 0) {
+      setValores(prev => ({ ...prev, [proj.chave_rfc]: { ...prev[proj.chave_rfc], ...update } }))
+    }
+  }
+
   // Status de envio do gestor atual
   const registrosGestor = forecastSemana.filter(f => f.gerente_site === perfil.nome)
   const jaEnviei = registrosGestor.length > 0
@@ -323,65 +363,70 @@ export default function Forecast({ perfil, onLogout }) {
   async function handleEnviar() {
     setEnviando(true)
     setErro(null)
-    const registros = []
-    const mesesMap = [
-      { key:'mes1', label:mes1, ano:ano1 },
-      { key:'mes2', label:mes2, ano:ano2 },
-      { key:'mes3', label:mes3, ano:ano3 },
-    ]
+    try {
+      const registros = []
+      const mesesMap = [
+        { key:'mes1', label:mes1, ano:ano1 },
+        { key:'mes2', label:mes2, ano:ano2 },
+        { key:'mes3', label:mes3, ano:ano3 },
+      ]
 
-    for (const proj of itensFiltrados) {
-      const chave_rfc = proj.chave_rfc
-      for (const m of mesesMap) {
-        // valor: estado local primeiro, senão valor já salvo desta semana
-        const valStr = valores[chave_rfc]?.[m.key]
-        const valExistente = forecastSemana.find(f => f.chave_rfc === chave_rfc && f.mes_referencia === m.label)?.receita_prevista
-        const val = valStr !== undefined ? parseFloat(valStr) : valExistente
-        if (!val || val === 0) continue
+      for (const proj of itensFiltrados) {
+        const chave_rfc = proj.chave_rfc
+        for (const m of mesesMap) {
+          // valor: estado local primeiro, senão valor já salvo desta semana
+          const valStr = valores[chave_rfc]?.[m.key]
+          const valExistente = forecastSemana.find(f => f.chave_rfc === chave_rfc && f.mes_referencia === m.label)?.receita_prevista
+          const val = valStr !== undefined ? parseFloat(valStr) : valExistente
+          if (!val || val === 0) continue
 
-        const confianca = valores[chave_rfc]?.[m.key+'_confianca']
-          ?? forecastSemana.find(f => f.chave_rfc === chave_rfc && f.mes_referencia === m.label)?.confianca
-          ?? null
-        const observacoes = valores[chave_rfc]?.[m.key+'_obs']
-          ?? forecastSemana.find(f => f.chave_rfc === chave_rfc && f.mes_referencia === m.label)?.observacoes
-          ?? null
+          const confianca = valores[chave_rfc]?.[m.key+'_confianca']
+            ?? forecastSemana.find(f => f.chave_rfc === chave_rfc && f.mes_referencia === m.label)?.confianca
+            ?? null
+          const observacoes = valores[chave_rfc]?.[m.key+'_obs']
+            ?? forecastSemana.find(f => f.chave_rfc === chave_rfc && f.mes_referencia === m.label)?.observacoes
+            ?? null
 
-        registros.push({
-          chave_unica:      chave_rfc+'-'+m.label+'-'+m.ano+'-'+semana,
-          chave_rfc,
-          identificacao:    proj.identificacao,
-          grupo:            proj.grupo,
-          gerente_site:     perfil.nome,
-          mes_referencia:   m.label,
-          ano_referencia:   m.ano,
-          semana_coleta:    semana,
-          receita_prevista: val,
-          confianca,
-          observacoes,
-          data_coleta:      new Date().toISOString(),
-        })
+          registros.push({
+            chave_unica:      chave_rfc+'-'+m.label+'-'+m.ano+'-'+semana,
+            chave_rfc,
+            cod_projeto:      proj.cod_projeto ? parseInt(proj.cod_projeto, 10) || null : null,
+            identificacao:    proj.identificacao,
+            grupo:            proj.grupo,
+            gerente_site:     perfil.nome,
+            mes_referencia:   m.label,
+            ano_referencia:   m.ano,
+            semana_coleta:    semana,
+            receita_prevista: val,
+            confianca,
+            observacoes,
+            data_coleta:      new Date().toISOString(),
+          })
+        }
       }
-    }
 
-    if (registros.length === 0) {
-      setErro('Nenhum valor preenchido.')
+      if (registros.length === 0) {
+        setErro('Nenhum valor preenchido.')
+        return
+      }
+
+      const { error } = await supabase.from('forecast_semanal').upsert(registros, { onConflict:'chave_unica' })
+      if (error) {
+        setErro(error.message)
+      } else {
+        const { data: fc } = await supabase
+          .from('forecast_semanal').select('*')
+          .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)
+        setForecastSemana(fc || [])
+        setValores({})
+        setSucesso(true)
+        setTimeout(() => setSucesso(false), 4000)
+      }
+    } catch (e) {
+      setErro('Erro ao enviar: ' + e.message)
+    } finally {
       setEnviando(false)
-      return
     }
-
-    const { error } = await supabase.from('forecast_semanal').upsert(registros, { onConflict:'chave_unica' })
-    if (error) {
-      setErro(error.message)
-    } else {
-      const { data: fc } = await supabase
-        .from('forecast_semanal').select('*')
-        .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)
-      setForecastSemana(fc || [])
-      setValores({})
-      setSucesso(true)
-      setTimeout(() => setSucesso(false), 4000)
-    }
-    setEnviando(false)
   }
 
   async function handleAtualizarRFC() {
@@ -413,6 +458,9 @@ export default function Forecast({ perfil, onLogout }) {
       // BP: qualquer projeto, desde que grupo seja Backlog / PIPE / Renovação
       if (!GRUPOS_BP.includes(b.grupo)) return
       const proj = projetosCadastro.find(p => p.cod_projeto === b.cod_projeto)
+      // Excluir apenas Interno e Encerrado — Vigente, PIPELINE e demais entram
+      // Se proj não encontrado (ex: cod 265/25), mantém (tem BP real)
+      if (proj && (proj.status === 'Encerrado' || proj.status === 'Interno')) return
       // chave_rfc foi construída como identificacao+grupo sem separador — remove o sufixo do grupo
       const identificacaoLimpa = b.grupo
         ? b.chave_rfc.replace(new RegExp(b.grupo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'), '').trim()
@@ -551,7 +599,7 @@ export default function Forecast({ perfil, onLogout }) {
           <>
             {/* CABEÇALHO DAS COLUNAS — fixo ao rolar */}
             <div style={{position:"sticky",top:52,zIndex:20,background:RTT.preto,paddingTop:4,paddingBottom:2}}>
-              <div style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 32px",gap:6}}>
+              <div style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 64px",gap:6}}>
                 <div style={{fontSize:10,fontWeight:500,color:RTT.cinzaTexto,fontFamily:F,alignSelf:"flex-end",paddingBottom:6}}>Projeto</div>
                 {MESES.map(m=>(
                   <div key={m.key} style={{background:RTT.cinzaEscuro,border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,overflow:"hidden"}}>
@@ -597,9 +645,9 @@ export default function Forecast({ perfil, onLogout }) {
                   {projs.map(proj => {
                     const gs = GRUPO_CORES[proj.grupo] || {bg:"rgba(100,100,100,0.08)",text:"#71717a",border:"rgba(100,100,100,0.15)"}
                     return (
-                      <div key={proj.chave_rfc} style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 32px",gap:6,alignItems:"center",padding:"8px 10px",borderRadius:6,background:RTT.cinzaEscuro,border:`1px solid ${RTT.cinzaBorda}`}}>
+                      <div key={proj.chave_rfc} style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 64px",gap:6,alignItems:"start",padding:"8px 10px",borderRadius:6,background:RTT.cinzaEscuro,border:`1px solid ${RTT.cinzaBorda}`}}>
                         {/* NOME DO PROJETO */}
-                        <div style={{minWidth:0,display:"flex",flexDirection:"column",gap:3}}>
+                        <div style={{minWidth:0,display:"flex",flexDirection:"column",gap:3,paddingTop:2}}>
                           <div style={{fontSize:12,fontWeight:500,color:RTT.branco,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontFamily:F}}>{proj.identificacao}</div>
                           {proj.grupo && <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,fontWeight:500,background:gs.bg,color:gs.text,border:`1px solid ${gs.border}`,alignSelf:"flex-start",fontFamily:F}}>{proj.grupo}</span>}
                         </div>
@@ -674,13 +722,24 @@ export default function Forecast({ perfil, onLogout }) {
                           )
                         })}
 
-                        {/* BOTÃO PAINEL ANUAL */}
-                        <button
-                          onClick={()=>setPainel(proj)}
-                          style={{width:28,height:28,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,color:RTT.cinzaTexto,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:F}}
-                          onMouseEnter={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda2;e.currentTarget.style.color=RTT.branco}}
-                          onMouseLeave={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda;e.currentTarget.style.color=RTT.cinzaTexto}}
-                        >›</button>
+                        {/* BOTÕES: REPLICAR + PAINEL ANUAL */}
+                        <div style={{display:"flex",flexDirection:"column",gap:4,paddingTop:2}}>
+                          {perfil.perfil==='gestor' && (
+                            <button
+                              onClick={()=>replicarRFC(proj)}
+                              title="Replicar forecast da semana anterior"
+                              style={{width:28,height:28,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,color:RTT.cinzaTexto,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}
+                              onMouseEnter={e=>{e.currentTarget.style.borderColor=RTT.amarelo;e.currentTarget.style.color=RTT.amarelo}}
+                              onMouseLeave={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda;e.currentTarget.style.color=RTT.cinzaTexto}}
+                            >↺</button>
+                          )}
+                          <button
+                            onClick={()=>setPainel(proj)}
+                            style={{width:28,height:28,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,color:RTT.cinzaTexto,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}
+                            onMouseEnter={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda2;e.currentTarget.style.color=RTT.branco}}
+                            onMouseLeave={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda;e.currentTarget.style.color=RTT.cinzaTexto}}
+                          >›</button>
+                        </div>
                       </div>
                     )
                   })}
@@ -725,7 +784,7 @@ export default function Forecast({ perfil, onLogout }) {
         )}
       </main>
 
-      {painel && <PainelAnual proj={painel} mesAtualIdx={mesAtualIdx} bpAnual={bpAnual} forecastAnual={forecastAnual} onClose={()=>setPainel(null)}/>}
+      {painel && <PainelAnual proj={painel} mesAtualIdx={mesAtualIdx} forecastAnual={forecastAnual} onClose={()=>setPainel(null)}/>}
     </div>
   )
 }
