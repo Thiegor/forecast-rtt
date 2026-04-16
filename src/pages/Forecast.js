@@ -410,11 +410,16 @@ export default function Forecast({ perfil, onLogout }) {
         return
       }
 
-      const upsertPromise = supabase.from('forecast_semanal').upsert(registros, { onConflict:'chave_unica' })
-      const upsertTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
-      const { error } = await Promise.race([upsertPromise, upsertTimeout])
+      const upsertPromise = supabase
+        .from('forecast_semanal')
+        .upsert(registros, { onConflict:'chave_unica' })
+        .select('chave_unica')
+      const upsertTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000))
+      const { data: saved, error } = await Promise.race([upsertPromise, upsertTimeout])
       if (error) {
-        setErro(error.message)
+        setErro('Erro ao salvar: ' + error.message)
+      } else if (!saved || saved.length === 0) {
+        setErro('Nenhum registro foi salvo. Verifique sua conexão e tente novamente.')
       } else {
         // Atualiza state local com os registros enviados (evita re-fetch que pode travar)
         setForecastSemana(prev => {
@@ -431,7 +436,7 @@ export default function Forecast({ perfil, onLogout }) {
         setTimeout(() => setSucesso(false), 4000)
       }
     } catch (e) {
-      setErro('Erro ao enviar: ' + e.message)
+      setErro('Erro ao enviar: ' + (e.message === 'timeout' ? 'Servidor demorou demais (30s). Tente novamente.' : e.message))
     } finally {
       setEnviando(false)
     }
