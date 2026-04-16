@@ -410,7 +410,9 @@ export default function Forecast({ perfil, onLogout }) {
         return
       }
 
-      const { error } = await supabase.from('forecast_semanal').upsert(registros, { onConflict:'chave_unica' })
+      const upsertPromise = supabase.from('forecast_semanal').upsert(registros, { onConflict:'chave_unica' })
+      const upsertTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000))
+      const { error } = await Promise.race([upsertPromise, upsertTimeout])
       if (error) {
         setErro(error.message)
       } else {
