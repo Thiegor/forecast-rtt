@@ -414,10 +414,16 @@ export default function Forecast({ perfil, onLogout }) {
       if (error) {
         setErro(error.message)
       } else {
-        const { data: fc } = await supabase
-          .from('forecast_semanal').select('*')
-          .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)
-        setForecastSemana(fc || [])
+        // Atualiza state local com os registros enviados (evita re-fetch que pode travar)
+        setForecastSemana(prev => {
+          const updated = [...prev]
+          registros.forEach(reg => {
+            const idx = updated.findIndex(f => f.chave_unica === reg.chave_unica)
+            if (idx >= 0) updated[idx] = { ...updated[idx], ...reg }
+            else updated.push(reg)
+          })
+          return updated
+        })
         setValores({})
         setSucesso(true)
         setTimeout(() => setSucesso(false), 4000)
