@@ -469,7 +469,7 @@ export default function Forecast({ perfil, onLogout }) {
         chave_rfc: b.chave_rfc,
         cod_projeto: b.cod_projeto,
         grupo: b.grupo,
-        identificacao: proj?.identificacao || identificacaoLimpa,
+        identificacao: identificacaoLimpa || proj?.identificacao,
         gerente_site: proj?.gerente_site || '',
         gerente_regional: proj?.gerente_regional || '',
         cliente: proj?.cliente || '',
