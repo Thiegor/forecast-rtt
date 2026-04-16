@@ -452,7 +452,7 @@ export default function Forecast({ perfil, onLogout }) {
 
   // Derivar lista de itens: UNIÃO de chave_rfc em bp_anual + forecast_semanal do ano
   const itensMap = {}
-  const GRUPOS_BP = ['Backlog', 'PIPE', 'Renovação']
+  const GRUPOS_BP = ['Backlog', 'PIPE', 'Renovação', 'Spot']
   bpAnual.forEach(b => {
     if (!itensMap[b.chave_rfc]) {
       // BP: qualquer projeto, desde que grupo seja Backlog / PIPE / Renovação
