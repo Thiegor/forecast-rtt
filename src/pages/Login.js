@@ -28,9 +28,14 @@ export default function Login({ onLogin }) {
     setErro('')
     setLoading(true)
     try {
-      await onLogin(email, senha)
-    } catch {
-      setErro('Email ou senha inválidos.')
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 12000)
+      )
+      await Promise.race([onLogin(email, senha), timeout])
+    } catch(err) {
+      setErro(err?.message === 'timeout'
+        ? 'Servidor demorou demais. Verifique sua conexão e tente novamente.'
+        : 'Email ou senha inválidos.')
     } finally {
       setLoading(false)
     }
