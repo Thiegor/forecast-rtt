@@ -542,7 +542,7 @@ export default function Forecast({ perfil, onLogout }) {
               <span style={{fontSize:13,fontWeight:700,color:RTT.branco,fontFamily:F}}>R$ {fmtShort(totalBP)}</span>
               <span style={{color:RTT.cinzaBorda2,margin:"0 4px"}}>·</span>
               <span style={{fontSize:12,color:RTT.cinzaClaro,fontFamily:F}}>RFC s-1</span>
-              <span style={{fontSize:13,fontWeight:600,color:RTT.brancoSuave,fontFamily:F}}>R$ {fmt(totalRFC)}</span>
+              <span style={{fontSize:13,fontWeight:600,color:RTT.brancoSuave,fontFamily:F}}>R$ {fmtShort(totalRFC)}</span>
               {delta !== null && (
                 <>
                   <span style={{color:RTT.cinzaBorda2,margin:"0 4px"}}>·</span>
