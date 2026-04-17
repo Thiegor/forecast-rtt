@@ -671,9 +671,9 @@ export default function Forecast({ perfil, onLogout }) {
                   {projs.map(proj => {
                     const gs = GRUPO_CORES[proj.grupo] || {bg:"rgba(100,100,100,0.08)",text:"#71717a",border:"rgba(100,100,100,0.15)"}
                     return (
-                      <div key={proj.chave_rfc} style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 64px",gap:6,alignItems:"start",padding:"8px 10px",borderRadius:6,background:RTT.cinzaEscuro,border:`1px solid ${RTT.cinzaBorda}`}}>
+                      <div key={proj.chave_rfc} style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 64px",gap:6,alignItems:"center",padding:"8px 10px",borderRadius:6,background:RTT.cinzaEscuro,border:`1px solid ${RTT.cinzaBorda}`}}>
                         {/* NOME DO PROJETO */}
-                        <div style={{minWidth:0,display:"flex",flexDirection:"column",gap:3,paddingTop:2}}>
+                        <div style={{minWidth:0,display:"flex",flexDirection:"column",gap:3}}>
                           <div style={{fontSize:12,fontWeight:500,color:RTT.branco,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontFamily:F}}>{proj.identificacao}</div>
                           {proj.grupo && <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,fontWeight:500,background:gs.bg,color:gs.text,border:`1px solid ${gs.border}`,alignSelf:"flex-start",fontFamily:F}}>{proj.grupo}</span>}
                         </div>
@@ -687,20 +687,20 @@ export default function Forecast({ perfil, onLogout }) {
                           const obsVal = getObs(proj.chave_rfc, m.key)
 
                           return (
-                            <div key={m.key} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,alignItems:"start"}}>
+                            <div key={m.key} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,alignItems:"center"}}>
                               {/* BP */}
-                              <div style={{textAlign:"center",padding:"2px 0"}}>
+                              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:28}}>
                                 <div style={{fontSize:12,fontWeight:600,color:RTT.amarelo,fontFamily:F}}>{fmt(bp)}</div>
                               </div>
 
                               {/* RFC s-1 */}
-                              <div style={{textAlign:"center",padding:"2px 0"}}>
+                              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:28,gap:1}}>
                                 <div style={{fontSize:12,fontWeight:500,color:RTT.brancoSuave,fontFamily:F}}>{fmt(rfc)}</div>
                                 <Delta val={rfc} refVal={bp}/>
                               </div>
 
                               {/* FORECAST */}
-                              <div style={{background:"rgba(227,30,36,0.04)",borderRadius:5,padding:"2px 4px"}}>
+                              <div style={{background:"rgba(227,30,36,0.04)",borderRadius:5,padding:"0 4px",minHeight:28,display:"flex",flexDirection:"column",justifyContent:"center"}}>
                                 <div style={{display:"flex",gap:2,alignItems:"center"}}>
                                   <input
                                     type="number"
