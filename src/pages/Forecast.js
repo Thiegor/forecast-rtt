@@ -207,6 +207,13 @@ export default function Forecast({ perfil, onLogout }) {
   const mesAtualIdx = now.getMonth()
   const janelaBloqueada = perfil.perfil !== 'admin' && !isJanelaAberta()
 
+  // Data da sexta-feira desta semana (prazo)
+  const sexta = new Date(now)
+  const diasParaSexta = (5 - now.getDay() + 7) % 7 || 7
+  sexta.setDate(now.getDate() + (now.getDay() === 5 ? 0 : diasParaSexta))
+  const prazoDia = String(sexta.getDate()).padStart(2, '0')
+  const prazoMes = String(sexta.getMonth() + 1).padStart(2, '0')
+
   // semana anterior (trata virada de ano)
   const semanaPrev = semana === 1 ? 52 : semana - 1
   const anoPrev = semana === 1 ? anoAtual - 1 : anoAtual
@@ -765,7 +772,7 @@ export default function Forecast({ perfil, onLogout }) {
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 0",marginTop:16,borderTop:`1px solid ${RTT.cinzaBorda}`}}>
               <div style={{display:"flex",flexDirection:"column",gap:3}}>
                 <div style={{fontSize:11,color:RTT.cinzaTexto,fontFamily:F}}>
-                  {itensFiltrados.length} projetos · S{semana}/{anoAtual} · Prazo <strong style={{color:RTT.cinzaClaro,fontWeight:500}}>sexta 12h</strong>
+                  {itensFiltrados.length} projetos · S{semana}/{anoAtual} · Prazo <strong style={{color:RTT.cinzaClaro,fontWeight:500}}>sexta {prazoDia}/{prazoMes} 12h</strong>
                 </div>
                 {perfil.perfil==='gestor' && (
                   <div style={{fontSize:11,fontWeight:600,fontFamily:F,color:jaEnviei?RTT.verde:RTT.amarelo}}>
