@@ -40,17 +40,20 @@ export default function App() {
     }
     init()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        try {
-          const data = await buscarPerfil(session.user.email)
-          setPerfil(data)
-          setEstado(data ? 'logado' : 'sem-perfil')
-        } catch {
-          setEstado('login')
-        }
-      } else {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!session?.user) {
         setPerfil(null)
+        setEstado('login')
+        return
+      }
+      // TOKEN_REFRESHED e USER_UPDATED: sessão ainda válida, não re-busca perfil
+      // (evita logout forçado quando a query de perfil timed out durante refresh)
+      if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return
+      try {
+        const data = await buscarPerfil(session.user.email)
+        setPerfil(data)
+        setEstado(data ? 'logado' : 'sem-perfil')
+      } catch {
         setEstado('login')
       }
     })
