@@ -561,15 +561,21 @@ export default function Forecast({ perfil, onLogout }) {
         </div>
       </header>
 
-      {/* BANNERS */}
-      {sucesso && (
-        <div style={{background:"rgba(16,185,129,0.08)",borderBottom:`1px solid rgba(16,185,129,0.2)`,color:RTT.verde,padding:"9px 28px",fontSize:12,textAlign:"center",fontWeight:600,fontFamily:F}}>
-          Forecast semana {semana} enviado com sucesso
-        </div>
-      )}
-      {erro && (
-        <div style={{background:"rgba(227,30,36,0.08)",borderBottom:`1px solid rgba(227,30,36,0.2)`,color:"#fca5a5",padding:"9px 28px",fontSize:12,textAlign:"center",fontFamily:F}}>
-          {erro}
+      {/* TOAST FIXO — visível independente do scroll */}
+      {(sucesso || erro) && (
+        <div style={{
+          position:'fixed', bottom:72, right:28, zIndex:9999,
+          background: sucesso ? '#0d2e1f' : '#2a0a0a',
+          border: `1px solid ${sucesso ? RTT.verde : RTT.vermelho}`,
+          borderRadius:8, padding:'12px 20px', maxWidth:340,
+          boxShadow:'0 4px 24px rgba(0,0,0,0.5)',
+          display:'flex', alignItems:'center', gap:10, fontFamily:F,
+        }}>
+          <span style={{fontSize:18}}>{sucesso ? '✅' : '⚠️'}</span>
+          <span style={{fontSize:13, fontWeight: sucesso ? 600 : 400, color: sucesso ? RTT.verde : '#fca5a5', lineHeight:1.4}}>
+            {sucesso ? `Forecast S${semana} enviado com sucesso!` : erro}
+          </span>
+          <button onClick={()=>{setSucesso(false);setErro(null)}} style={{marginLeft:'auto',background:'none',border:'none',color:'#5a5a5a',cursor:'pointer',fontSize:16,lineHeight:1,padding:'0 0 0 8px'}}>✕</button>
         </div>
       )}
       {janelaBloqueada && (
