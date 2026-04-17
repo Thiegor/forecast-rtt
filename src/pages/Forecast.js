@@ -685,7 +685,6 @@ export default function Forecast({ perfil, onLogout }) {
                           const obsKey = proj.chave_rfc + '_' + m.key
                           const obsAberta = obsAbertas.has(obsKey)
                           const obsVal = getObs(proj.chave_rfc, m.key)
-                          const confVal = getConfianca(proj.chave_rfc, m.key)
 
                           return (
                             <div key={m.key} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,alignItems:"start"}}>
@@ -717,20 +716,6 @@ export default function Forecast({ perfil, onLogout }) {
                                     title="Observação"
                                     style={{background:"none",border:"none",color:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:11,padding:"2px",lineHeight:1,flexShrink:0}}
                                   >✎</button>
-                                </div>
-                                {/* Botões confiança — iniciais */}
-                                <div style={{display:"flex",gap:2,marginTop:3}}>
-                                  {CONFIANCA_OPTS.map(opt=>{
-                                    const sel = confVal === opt.label
-                                    return (
-                                      <button
-                                        key={opt.label}
-                                        onClick={()=>setValor(proj.chave_rfc, m.key+'_confianca', sel?'':opt.label)}
-                                        title={opt.label}
-                                        style={{flex:1,padding:"2px 0",fontSize:10,fontWeight:sel?700:400,cursor:"pointer",fontFamily:F,borderRadius:3,border:`1px solid ${sel?opt.corBorda:RTT.cinzaBorda}`,background:sel?opt.corFundo:"transparent",color:sel?opt.cor:RTT.cinzaTexto}}
-                                      >{opt.label[0]}</button>
-                                    )
-                                  })}
                                 </div>
                                 {(obsAberta || obsVal) && (
                                   <textarea
