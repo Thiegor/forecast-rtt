@@ -97,28 +97,36 @@ function fmtDataColeta(iso) {
   return `${dia}/${mes} ${h}:${min}`
 }
 
-function PainelAnual({ proj, mesAtualIdx, forecastAnual, onClose }) {
+function PainelAnual({ proj, mesAtualIdx, forecastAnual, onClose, perfil, semana }) {
   const anoAtual = new Date().getFullYear()
   const mesesRolantes = [mesAtualIdx, mesAtualIdx+1, mesAtualIdx+2]
+  // Meses editáveis: a partir do 4º mês seguinte ao atual (excluindo os 3 do formulário e os passados)
+  const mesesEditaveis = MESES_LONGOS.map((_,i)=>i).filter(i => i > mesAtualIdx + 2)
+
   const [projBP, setProjBP] = useState([])
+  const [valoresEdit, setValoresEdit] = useState({})   // { mesIdx: string }
+  const [obsEdit, setObsEdit]     = useState({})       // { mesIdx: string }
+  const [obsAbertasEdit, setObsAbertasEdit] = useState(new Set())
+  const [salvando, setSalvando]   = useState(false)
+  const [salvouOk, setSalvouOk]   = useState(false)
+  const [erroSalvar, setErroSalvar] = useState(null)
+  // Registros recém-salvos: sobrepõem forecastAnual no cálculo do rfcPorMes
+  const [savedExtra, setSavedExtra] = useState([])
 
   useEffect(() => {
-    // Busca por cod_projeto (agrega todos os grupos do projeto) ou por chave_rfc como fallback
     const query = supabase.from('bp_anual').select('chave_rfc,mes,valor_bp').eq('ano', anoAtual)
     const p = proj.cod_projeto ? query.eq('cod_projeto', proj.cod_projeto) : query.eq('chave_rfc', proj.chave_rfc)
     p.then(({ data }) => setProjBP(data || []))
   }, [proj.cod_projeto, proj.chave_rfc, anoAtual])
 
-  // Soma BP por mês agregando todos os grupos do projeto
   const bpPorMes = {}
   projBP.forEach(b => { bpPorMes[b.mes] = (bpPorMes[b.mes] || 0) + (Number(b.valor_bp) || 0) })
   const totalBP = Object.values(bpPorMes).reduce((s, v) => s + v, 0)
 
-  // RFC atual por mês: registro com maior semana_coleta
-  // RFC por mês: usa as chave_rfc do bp_anual do projeto (cod_projeto pode ser null no forecast)
   const chavesRfcProjeto = new Set(projBP.map(b => b.chave_rfc))
   const melhorPorChaveMes = {}
-  forecastAnual
+  // Combina forecastAnual com savedExtra (saved locally após salvar no painel)
+  ;[...forecastAnual, ...savedExtra]
     .filter(f => chavesRfcProjeto.has(f.chave_rfc) && f.ano_referencia === anoAtual)
     .forEach(f => {
       const key = f.chave_rfc + '|' + f.mes_referencia
@@ -133,64 +141,230 @@ function PainelAnual({ proj, mesAtualIdx, forecastAnual, onClose }) {
   const deltaAnual = totalBP > 0 && totalRFC > 0 ? ((totalRFC - totalBP) / totalBP * 100) : null
   const deltaAnualCor = deltaAnual === null ? RTT.cinzaClaro : deltaAnual > 5 ? RTT.verde : deltaAnual < -5 ? RTT.vermelho : RTT.amarelo
 
-  const F = `Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`
+  function getValEdit(i) {
+    if (valoresEdit[i] !== undefined) return valoresEdit[i]
+    const rfc = rfcPorMes[MESES_LONGOS[i]] || 0
+    return rfc ? String(rfc) : ''
+  }
+
+  function toggleObsEdit(i) {
+    setObsAbertasEdit(prev => { const n = new Set(prev); n.has(i) ? n.delete(i) : n.add(i); return n })
+  }
+
+  async function salvarFuturos() {
+    setErroSalvar(null)
+    // Validação: variação > 5% exige comentário
+    const semObs = []
+    mesesEditaveis.forEach(i => {
+      const val = parseFloat(getValEdit(i))
+      const rfcRef = rfcPorMes[MESES_LONGOS[i]] || 0
+      if (val && rfcRef && temVariacao(val, rfcRef) && !obsEdit[i]?.trim())
+        semObs.push(MESES_LONGOS[i])
+    })
+    if (semObs.length > 0) {
+      setErroSalvar(`Comentário obrigatório para variação >5%: ${semObs.join(', ')}`)
+      return
+    }
+
+    setSalvando(true)
+    try {
+      const registros = []
+      mesesEditaveis.forEach(i => {
+        const val = parseFloat(getValEdit(i))
+        if (!val || val === 0) return
+        const mesLabel = MESES_LONGOS[i]
+        registros.push({
+          chave_unica:      proj.chave_rfc+'-'+mesLabel+'-'+anoAtual+'-'+semana,
+          chave_rfc:        proj.chave_rfc,
+          identificacao:    proj.identificacao,
+          grupo:            proj.grupo,
+          gerente_site:     perfil.nome,
+          mes_referencia:   mesLabel,
+          ano_referencia:   anoAtual,
+          semana_coleta:    semana,
+          receita_prevista: val,
+          confianca:        null,
+          observacoes:      obsEdit[i]?.trim() || null,
+          data_coleta:      new Date().toISOString(),
+        })
+      })
+      if (registros.length === 0) { setErroSalvar('Nenhum valor preenchido.'); return }
+
+      const { error } = await supabase.from('forecast_semanal').upsert(registros, { onConflict:'chave_unica' })
+      if (error) { setErroSalvar(error.message); return }
+
+      // Atualiza visualização local imediatamente
+      setSavedExtra(prev => {
+        const merged = [...prev]
+        registros.forEach(reg => {
+          const idx = merged.findIndex(f => f.chave_rfc === reg.chave_rfc && f.mes_referencia === reg.mes_referencia)
+          if (idx >= 0) merged[idx] = { ...merged[idx], ...reg }
+          else merged.push(reg)
+        })
+        return merged
+      })
+      setValoresEdit({})
+      setObsEdit({})
+      setObsAbertasEdit(new Set())
+      setSalvouOk(true)
+      setTimeout(() => setSalvouOk(false), 3000)
+    } catch (e) {
+      setErroSalvar(e.message)
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  const temEdicoes = mesesEditaveis.some(i => {
+    const v = valoresEdit[i]
+    return v !== undefined && v !== '' && !isNaN(parseFloat(v))
+  })
+
   return (
     <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex"}}>
       <div onClick={onClose} style={{flex:1,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(3px)"}}/>
-      <div style={{width:480,background:RTT.cinzaEscuro,borderLeft:`1px solid ${RTT.cinzaBorda}`,display:"flex",flexDirection:"column",overflow:"hidden",fontFamily:F}}>
-        {/* HEADER DO PAINEL */}
+      <div style={{width:520,background:RTT.cinzaEscuro,borderLeft:`1px solid ${RTT.cinzaBorda}`,display:"flex",flexDirection:"column",overflow:"hidden",fontFamily:F}}>
+        {/* HEADER */}
         <div style={{padding:"20px 24px 16px",borderBottom:`1px solid ${RTT.cinzaBorda}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
             <div style={{flex:1,marginRight:12}}>
-              <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:4,fontFamily:F}}>Visão Anual {anoAtual} — todos os grupos</div>
-              <div style={{fontSize:14,fontWeight:600,color:RTT.branco,lineHeight:1.3,fontFamily:F}}>{proj.identificacao}</div>
-              <div style={{display:"flex",gap:8,marginTop:6,alignItems:"center"}}>
-                <span style={{fontSize:11,color:RTT.cinzaTexto,fontFamily:F}}>{proj.gerente_site}</span>
-              </div>
+              <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:4}}>Visão Anual {anoAtual} — todos os grupos</div>
+              <div style={{fontSize:14,fontWeight:600,color:RTT.branco,lineHeight:1.3}}>{proj.identificacao}</div>
+              <div style={{marginTop:6}}><span style={{fontSize:11,color:RTT.cinzaTexto}}>{proj.gerente_site}</span></div>
             </div>
-            <button onClick={onClose} style={{background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,color:RTT.cinzaClaro,width:28,height:28,borderRadius:6,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}>✕</button>
+            <button onClick={onClose} style={{background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,color:RTT.cinzaClaro,width:28,height:28,borderRadius:6,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            <div style={{background:RTT.cinzaMedio,borderRadius:6,padding:"8px 12px",border:`1px solid ${RTT.cinzaBorda}`}}>
-              <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:2,fontFamily:F}}>BP Total {anoAtual}</div>
-              <div style={{fontSize:14,fontWeight:700,color:RTT.amarelo,fontFamily:F}}>R$ {fmtShort(totalBP)}</div>
-            </div>
-            <div style={{background:RTT.cinzaMedio,borderRadius:6,padding:"8px 12px",border:`1px solid ${RTT.cinzaBorda}`}}>
-              <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:2,fontFamily:F}}>RFC Total</div>
-              <div style={{fontSize:14,fontWeight:700,color:totalRFC?RTT.branco:RTT.cinzaTexto,fontFamily:F}}>{totalRFC ? `R$ ${fmtShort(totalRFC)}` : "—"}</div>
-            </div>
-            <div style={{background:RTT.cinzaMedio,borderRadius:6,padding:"8px 12px",border:`1px solid ${RTT.cinzaBorda}`}}>
-              <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:2,fontFamily:F}}>RFC vs BP</div>
-              <div style={{fontSize:14,fontWeight:700,color:deltaAnualCor,fontFamily:F}}>
-                {deltaAnual !== null ? `${deltaAnual>0?'▲':'▼'}${Math.abs(deltaAnual).toFixed(1)}%` : "—"}
+            {[
+              {label:`BP Total ${anoAtual}`, val:`R$ ${fmtShort(totalBP)}`, cor:RTT.amarelo},
+              {label:"RFC Total", val:totalRFC?`R$ ${fmtShort(totalRFC)}`:"—", cor:totalRFC?RTT.branco:RTT.cinzaTexto},
+              {label:"RFC vs BP", val:deltaAnual!==null?`${deltaAnual>0?'▲':'▼'}${Math.abs(deltaAnual).toFixed(1)}%`:"—", cor:deltaAnualCor},
+            ].map(k=>(
+              <div key={k.label} style={{background:RTT.cinzaMedio,borderRadius:6,padding:"8px 12px",border:`1px solid ${RTT.cinzaBorda}`}}>
+                <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:2}}>{k.label}</div>
+                <div style={{fontSize:14,fontWeight:700,color:k.cor}}>{k.val}</div>
               </div>
-            </div>
+            ))}
           </div>
         </div>
-        {/* TABELA MENSAL */}
-        <div style={{display:"grid",gridTemplateColumns:"48px 1fr 1fr 56px",padding:"8px 24px 6px",borderBottom:`1px solid ${RTT.cinzaBorda}`}}>
-          {["Mês","BP","RFC atual","Δ"].map((h,i)=>(
-            <div key={i} style={{fontSize:10,color:RTT.cinzaTexto,textAlign:i>0?"center":"left",fontWeight:500,fontFamily:F}}>{h}</div>
+
+        {/* CABEÇALHO DA TABELA */}
+        <div style={{display:"grid",gridTemplateColumns:"44px 1fr 1fr 1fr 44px",padding:"8px 24px 6px",borderBottom:`1px solid ${RTT.cinzaBorda}`,gap:4}}>
+          {[
+            {l:"Mês",align:"left"},
+            {l:"BP",align:"center"},
+            {l:"RFC atual",align:"center"},
+            {l:"Forecast",align:"center"},
+            {l:"Δ",align:"center"},
+          ].map((h,i)=>(
+            <div key={i} style={{fontSize:10,color:i===3?RTT.vermelho:RTT.cinzaTexto,textAlign:h.align,fontWeight:500}}>{h.l}</div>
           ))}
         </div>
+
+        {/* LINHAS */}
         <div style={{flex:1,overflowY:"auto"}}>
           {MESES_LONGOS.map((mes,i)=>{
-            const isAtual = mesesRolantes.includes(i)
-            const bp = bpPorMes[i+1] || 0
-            const rfc = rfcPorMes[mes] || 0
-            const delta = bp > 0 && rfc > 0 ? ((rfc - bp) / bp * 100) : null
+            const isAtual  = mesesRolantes.includes(i)
+            const isEdit   = mesesEditaveis.includes(i)
+            const bp       = bpPorMes[i+1] || 0
+            const rfc      = rfcPorMes[mes] || 0
+            const valInput = getValEdit(i)
+            const valNum   = parseFloat(valInput)
+            const variacaoAlta = isEdit && temVariacao(valNum, rfc)
+            const obsObrig = variacaoAlta && !obsEdit[i]?.trim()
+            const obsAberta = obsAbertasEdit.has(i)
+            const delta    = bp > 0 && rfc > 0 ? ((rfc - bp) / bp * 100) : null
             const deltaCor = delta === null ? RTT.cinzaTexto : delta > 5 ? RTT.verde : delta < -5 ? RTT.vermelho : RTT.amarelo
+
             return (
-              <div key={mes} style={{display:"grid",gridTemplateColumns:"48px 1fr 1fr 56px",padding:"7px 24px",background:isAtual?RTT.cinzaMedio:"transparent",borderLeft:isAtual?`2px solid ${RTT.vermelho}`:"2px solid transparent",borderBottom:`1px solid ${RTT.cinzaBorda}`}}>
-                <div style={{fontSize:11,fontWeight:isAtual?600:400,color:isAtual?RTT.branco:RTT.cinzaClaro,fontFamily:F}}>{mes.slice(0,3)}</div>
-                <div style={{textAlign:"center",fontSize:12,fontWeight:600,color:bp?RTT.amarelo:RTT.cinzaTexto,fontFamily:F}}>{fmt(bp)}</div>
-                <div style={{textAlign:"center",fontSize:12,fontWeight:500,color:rfc?RTT.brancoSuave:RTT.cinzaTexto,fontFamily:F}}>{rfc ? fmt(rfc) : "—"}</div>
-                <div style={{textAlign:"center",fontSize:10,fontWeight:600,color:deltaCor,fontFamily:F}}>
-                  {delta !== null ? `${delta>0?'▲':'▼'}${Math.abs(delta).toFixed(0)}%` : "—"}
+              <div key={mes} style={{
+                padding:"6px 24px",
+                background: isAtual ? RTT.cinzaMedio : "transparent",
+                borderLeft: isAtual ? `2px solid ${RTT.vermelho}` : isEdit ? `2px solid rgba(227,30,36,0.2)` : "2px solid transparent",
+                borderBottom:`1px solid ${RTT.cinzaBorda}`,
+              }}>
+                <div style={{display:"grid",gridTemplateColumns:"44px 1fr 1fr 1fr 44px",alignItems:"center",gap:4}}>
+                  {/* MÊS */}
+                  <div style={{fontSize:11,fontWeight:isAtual?600:400,color:isAtual?RTT.branco:isEdit?RTT.cinzaClaro:RTT.cinzaTexto}}>{mes.slice(0,3)}</div>
+                  {/* BP */}
+                  <div style={{textAlign:"center",fontSize:12,fontWeight:600,color:bp?RTT.amarelo:RTT.cinzaTexto}}>{fmt(bp)}</div>
+                  {/* RFC atual */}
+                  <div style={{textAlign:"center",fontSize:12,color:rfc?RTT.brancoSuave:RTT.cinzaTexto}}>{rfc ? fmt(rfc) : "—"}</div>
+                  {/* FORECAST — editável só para meses futuros */}
+                  {isEdit ? (
+                    <div style={{display:"flex",alignItems:"center",gap:2}}>
+                      <input
+                        type="number"
+                        placeholder="—"
+                        value={valInput}
+                        onChange={e=>{
+                          const v = e.target.value
+                          setValoresEdit(prev=>({...prev,[i]:v}))
+                          if (temVariacao(parseFloat(v), rfc))
+                            setObsAbertasEdit(prev=>{const n=new Set(prev);n.add(i);return n})
+                        }}
+                        style={{flex:1,background:"rgba(227,30,36,0.05)",border:"none",borderBottom:`1px solid ${obsObrig?RTT.amarelo:RTT.cinzaBorda2}`,borderRadius:0,padding:"3px 4px",color:RTT.branco,fontSize:11,outline:"none",textAlign:"right",boxSizing:"border-box",fontFamily:F,minWidth:0}}
+                        onFocus={e=>e.target.style.borderBottomColor=RTT.vermelho}
+                        onBlur={e=>e.target.style.borderBottomColor=obsObrig?RTT.amarelo:RTT.cinzaBorda2}
+                      />
+                      <button
+                        onClick={()=>toggleObsEdit(i)}
+                        title={obsObrig?"Comentário obrigatório (variação >5%)":"Observação"}
+                        style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsEdit[i]?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:10,padding:1,lineHeight:1,fontWeight:obsObrig?700:400,flexShrink:0}}
+                      >✎</button>
+                    </div>
+                  ) : (
+                    <div style={{textAlign:"center",fontSize:11,color:RTT.cinzaTexto}}>
+                      {isAtual ? <span style={{fontSize:9,color:RTT.cinzaTexto}}>no form.</span> : "—"}
+                    </div>
+                  )}
+                  {/* Δ */}
+                  <div style={{textAlign:"center",fontSize:10,fontWeight:600,color:deltaCor}}>
+                    {delta !== null ? `${delta>0?'▲':'▼'}${Math.abs(delta).toFixed(0)}%` : "—"}
+                  </div>
                 </div>
+                {/* OBS expandida para meses editáveis */}
+                {isEdit && (obsAberta || obsObrig) && (
+                  <div style={{marginTop:4,paddingLeft:48}}>
+                    {obsObrig && <div style={{fontSize:9,color:RTT.amarelo,marginBottom:2}}>⚠ comentário obrigatório</div>}
+                    <textarea
+                      value={obsEdit[i] || ''}
+                      placeholder="Explique a variação..."
+                      onChange={e=>setObsEdit(prev=>({...prev,[i]:e.target.value}))}
+                      rows={2}
+                      style={{width:"100%",background:RTT.cinzaMedio,border:`1px solid ${obsObrig?RTT.amarelo:RTT.cinzaBorda}`,borderRadius:4,padding:"4px 6px",color:RTT.branco,fontSize:11,outline:"none",resize:"none",boxSizing:"border-box",fontFamily:F}}
+                      onFocus={e=>e.target.style.borderColor=RTT.vermelho}
+                      onBlur={e=>e.target.style.borderColor=obsObrig?RTT.amarelo:RTT.cinzaBorda}
+                    />
+                  </div>
+                )}
               </div>
             )
           })}
+        </div>
+
+        {/* RODAPÉ — salvar meses futuros */}
+        <div style={{padding:"12px 24px",borderTop:`1px solid ${RTT.cinzaBorda}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <div style={{fontSize:11,fontFamily:F}}>
+            {salvouOk && <span style={{color:RTT.verde}}>✓ Forecast salvo com sucesso</span>}
+            {erroSalvar && <span style={{color:RTT.vermelho,whiteSpace:"pre-wrap"}}>{erroSalvar}</span>}
+            {!salvouOk && !erroSalvar && (
+              <span style={{color:RTT.cinzaTexto}}>Edite os meses futuros e salve</span>
+            )}
+          </div>
+          <button
+            onClick={salvarFuturos}
+            disabled={salvando || !temEdicoes}
+            style={{
+              background: temEdicoes ? RTT.vermelho : RTT.cinzaMedio,
+              color: temEdicoes ? RTT.branco : RTT.cinzaTexto,
+              border:"none", borderRadius:6, padding:"8px 20px",
+              fontSize:12, fontWeight:600, cursor: temEdicoes?"pointer":"default",
+              fontFamily:F, opacity: salvando ? 0.6 : 1, flexShrink:0,
+            }}
+          >
+            {salvando ? "Salvando..." : "Salvar Forecast"}
+          </button>
         </div>
       </div>
     </div>
@@ -838,7 +1012,7 @@ export default function Forecast({ perfil, onLogout }) {
         )}
       </main>
 
-      {painel && <PainelAnual proj={painel} mesAtualIdx={mesAtualIdx} forecastAnual={forecastAnual} onClose={()=>setPainel(null)}/>}
+      {painel && <PainelAnual proj={painel} mesAtualIdx={mesAtualIdx} forecastAnual={forecastAnual} onClose={()=>setPainel(null)} perfil={perfil} semana={semana}/>}
     </div>
   )
 }
