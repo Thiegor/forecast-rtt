@@ -55,11 +55,17 @@ function isJanelaAberta() {
   return false
 }
 
+// Número inteiro com separador de milhar: 1.540.350
 function fmt(val) {
+  if (!val || val === 0) return "—"
+  return Math.round(val).toLocaleString("pt-BR")
+}
+// Abreviado para totais no header: 43.9M / 6.4M
+function fmtShort(val) {
   if (!val || val === 0) return "—"
   if (val >= 1000000) return `${(val/1000000).toFixed(1)}M`
   if (val >= 1000) return `${(val/1000).toFixed(0)}K`
-  return val.toLocaleString("pt-BR")
+  return Math.round(val).toLocaleString("pt-BR")
 }
 
 function calcPct(a, b) {
@@ -140,11 +146,11 @@ function PainelAnual({ proj, mesAtualIdx, forecastAnual, onClose }) {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
             <div style={{background:RTT.cinzaMedio,borderRadius:6,padding:"8px 12px",border:`1px solid ${RTT.cinzaBorda}`}}>
               <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:2,fontFamily:F}}>BP Total {anoAtual}</div>
-              <div style={{fontSize:14,fontWeight:700,color:RTT.amarelo,fontFamily:F}}>R$ {fmt(totalBP)}</div>
+              <div style={{fontSize:14,fontWeight:700,color:RTT.amarelo,fontFamily:F}}>R$ {fmtShort(totalBP)}</div>
             </div>
             <div style={{background:RTT.cinzaMedio,borderRadius:6,padding:"8px 12px",border:`1px solid ${RTT.cinzaBorda}`}}>
               <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:2,fontFamily:F}}>RFC Total</div>
-              <div style={{fontSize:14,fontWeight:700,color:totalRFC?RTT.branco:RTT.cinzaTexto,fontFamily:F}}>{totalRFC ? `R$ ${fmt(totalRFC)}` : "—"}</div>
+              <div style={{fontSize:14,fontWeight:700,color:totalRFC?RTT.branco:RTT.cinzaTexto,fontFamily:F}}>{totalRFC ? `R$ ${fmtShort(totalRFC)}` : "—"}</div>
             </div>
             <div style={{background:RTT.cinzaMedio,borderRadius:6,padding:"8px 12px",border:`1px solid ${RTT.cinzaBorda}`}}>
               <div style={{fontSize:10,color:RTT.cinzaTexto,marginBottom:2,fontFamily:F}}>RFC vs BP</div>
@@ -533,7 +539,7 @@ export default function Forecast({ perfil, onLogout }) {
             </div>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:12,fontWeight:700,color:RTT.amarelo,fontFamily:F}}>BP {mes1.slice(0,3)}</span>
-              <span style={{fontSize:13,fontWeight:700,color:RTT.branco,fontFamily:F}}>R$ {fmt(totalBP)}</span>
+              <span style={{fontSize:13,fontWeight:700,color:RTT.branco,fontFamily:F}}>R$ {fmtShort(totalBP)}</span>
               <span style={{color:RTT.cinzaBorda2,margin:"0 4px"}}>·</span>
               <span style={{fontSize:12,color:RTT.cinzaClaro,fontFamily:F}}>RFC s-1</span>
               <span style={{fontSize:13,fontWeight:600,color:RTT.brancoSuave,fontFamily:F}}>R$ {fmt(totalRFC)}</span>
