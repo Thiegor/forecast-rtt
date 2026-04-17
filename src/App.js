@@ -3,30 +3,66 @@ import { supabase } from './lib/supabase'
 import Login from './pages/Login'
 import Forecast from './pages/Forecast'
 
+const CACHE_KEY = 'rtt_perfil_cache'
+
+function lerCache(email) {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return null
+    const cached = JSON.parse(raw)
+    if (cached?.email?.toLowerCase() === email.toLowerCase()) return cached
+  } catch {}
+  return null
+}
+
+function salvarCache(perfil) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(perfil)) } catch {}
+}
+
+function limparCache() {
+  try { localStorage.removeItem(CACHE_KEY) } catch {}
+}
+
 export default function App() {
   const [estado, setEstado] = useState('carregando')
   const [perfil, setPerfil] = useState(null)
 
   useEffect(() => {
-    // Busca perfil com timeout para evitar travar em "Carregando..."
+    // Busca perfil com timeout generoso para cold starts do Supabase free tier
     async function buscarPerfil(email) {
-      const t = new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))
+      const t = new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 20000))
       const q = supabase.from('usuarios').select('*').eq('email', email.toLowerCase()).maybeSingle()
       const { data } = await Promise.race([q, t])
       return data
     }
 
-    // Timeout geral: se toda a cadeia travar, vai para login em 14s
-    const fallback = setTimeout(() => setEstado('login'), 14000)
+    // Timeout geral de segurança
+    const fallback = setTimeout(() => setEstado('login'), 30000)
 
     async function init() {
       try {
         const { data: { session } } = await Promise.race([
           supabase.auth.getSession(),
-          new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))
+          new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 12000))
         ])
+
         if (session?.user) {
+          // Usa cache para mostrar o app imediatamente enquanto busca dados frescos
+          const cached = lerCache(session.user.email)
+          if (cached) {
+            setPerfil(cached)
+            setEstado('logado')
+            clearTimeout(fallback)
+            // Atualiza perfil em background sem derrubar o usuário
+            buscarPerfil(session.user.email).then(fresh => {
+              if (fresh) { setPerfil(fresh); salvarCache(fresh) }
+            }).catch(() => {})
+            return
+          }
+
+          // Sem cache: busca normalmente (primeira vez ou cache limpo)
           const data = await buscarPerfil(session.user.email)
+          if (data) salvarCache(data)
           setPerfil(data)
           setEstado(data ? 'logado' : 'sem-perfil')
         } else {
@@ -42,15 +78,28 @@ export default function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!session?.user) {
+        limparCache()
         setPerfil(null)
         setEstado('login')
         return
       }
-      // TOKEN_REFRESHED e USER_UPDATED: sessão ainda válida, não re-busca perfil
-      // (evita logout forçado quando a query de perfil timed out durante refresh)
+      // TOKEN_REFRESHED / USER_UPDATED: sessão ainda válida, não re-busca
       if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return
+
+      // SIGNED_IN / INITIAL_SESSION: usa cache se disponível
+      const cached = lerCache(session.user.email)
+      if (cached) {
+        setPerfil(cached)
+        setEstado('logado')
+        buscarPerfil(session.user.email).then(fresh => {
+          if (fresh) { setPerfil(fresh); salvarCache(fresh) }
+        }).catch(() => {})
+        return
+      }
+
       try {
         const data = await buscarPerfil(session.user.email)
+        if (data) salvarCache(data)
         setPerfil(data)
         setEstado(data ? 'logado' : 'sem-perfil')
       } catch {
@@ -67,6 +116,7 @@ export default function App() {
   }
 
   async function handleLogout() {
+    limparCache()
     await supabase.auth.signOut()
   }
 
