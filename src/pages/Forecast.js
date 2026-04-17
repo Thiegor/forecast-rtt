@@ -234,54 +234,48 @@ export default function Forecast({ perfil, onLogout }) {
   useEffect(() => {
     async function carregar() {
       setLoading(true)
-      const { data: cadastro } = await supabase
-        .from('projetos').select('*').order('identificacao')
-      setProjetosCadastro(cadastro || [])
+      try {
+        // Início da janela atual: última quinta-feira às 9h
+        const agora = new Date()
+        const inicioJanela = new Date(agora)
+        const diasDesdeQuinta = (agora.getDay() + 7 - 4) % 7
+        inicioJanela.setDate(agora.getDate() - diasDesdeQuinta)
+        inicioJanela.setHours(9, 0, 0, 0)
+        const mesesNums = [mesAtualIdx + 1, (mesAtualIdx + 1) % 12 + 1, (mesAtualIdx + 2) % 12 + 1]
 
-      // Início da janela atual: última quinta-feira às 9h
-      const agora = new Date()
-      const inicioJanela = new Date(agora)
-      const diasDesdeQuinta = (agora.getDay() + 7 - 4) % 7
-      inicioJanela.setDate(agora.getDate() - diasDesdeQuinta)
-      inicioJanela.setHours(9, 0, 0, 0)
+        function withTimeout(promise, ms = 12000) {
+          return Promise.race([promise, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))])
+        }
 
-      // semana atual — apenas submissões da janela aberta (quinta 9h em diante)
-      // garante que dados de testes anteriores não apareçam como "enviado"
-      const { data: fc } = await supabase
-        .from('forecast_semanal').select('*')
-        .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)
-        .gte('data_coleta', inicioJanela.toISOString())
-      setForecastSemana(fc || [])
+        // Todas as queries em paralelo com timeout individual
+        const [resCadastro, resFc, resUltSemana, resBp, resFcAnual] = await Promise.allSettled([
+          withTimeout(supabase.from('projetos').select('*').order('identificacao')),
+          withTimeout(supabase.from('forecast_semanal').select('*')
+            .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)
+            .gte('data_coleta', inicioJanela.toISOString())),
+          withTimeout(supabase.from('forecast_semanal').select('semana_coleta')
+            .eq('ano_referencia', anoAtual)
+            .order('semana_coleta', { ascending: false }).limit(1).single()),
+          withTimeout(supabase.from('bp_anual').select('*').eq('ano', anoAtual).in('mes', mesesNums)),
+          withTimeout(supabase.from('forecast_semanal').select('*').eq('ano_referencia', anoAtual)),
+        ])
 
-      // RFC s-1: usa a semana mais recente disponível no banco (não necessariamente semana-1)
-      const { data: ultimaSemanaData } = await supabase
-        .from('forecast_semanal')
-        .select('semana_coleta')
-        .eq('ano_referencia', anoAtual)
-        .order('semana_coleta', { ascending: false })
-        .limit(1)
-        .single()
-      const semanaRef = ultimaSemanaData?.semana_coleta ?? semanaPrev
-      const { data: fcPrev } = await supabase
-        .from('forecast_semanal').select('*')
-        .eq('semana_coleta', semanaRef).eq('ano_referencia', anoAtual)
-      setForecastSemanaAnterior(fcPrev || [])
+        setProjetosCadastro(resCadastro.value?.data || [])
+        setForecastSemana(resFc.value?.data || [])
 
-      // BP — apenas os 3 meses exibidos no formulário (evita limite de 1000 linhas do Supabase)
-      const mesesNums = [mesAtualIdx + 1, (mesAtualIdx + 1) % 12 + 1, (mesAtualIdx + 2) % 12 + 1]
-      const { data: bp } = await supabase
-        .from('bp_anual').select('*')
-        .eq('ano', anoAtual)
-        .in('mes', mesesNums)
-      setBpAnual(bp || [])
+        const semanaRef = resUltSemana.value?.data?.semana_coleta ?? semanaPrev
+        const resFcPrev = await withTimeout(
+          supabase.from('forecast_semanal').select('*').eq('semana_coleta', semanaRef).eq('ano_referencia', anoAtual)
+        ).catch(() => ({ data: [] }))
+        setForecastSemanaAnterior(resFcPrev?.data || [])
 
-      // Forecast anual — todos os registros do ano atual (para PainelAnual)
-      const { data: fcAnual } = await supabase
-        .from('forecast_semanal').select('*')
-        .eq('ano_referencia', anoAtual)
-      setForecastAnual(fcAnual || [])
-
-      setLoading(false)
+        setBpAnual(resBp.value?.data || [])
+        setForecastAnual(resFcAnual.value?.data || [])
+      } catch (e) {
+        console.error('Erro ao carregar dados:', e)
+      } finally {
+        setLoading(false)
+      }
     }
     carregar()
   }, []) // eslint-disable-line

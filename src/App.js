@@ -8,31 +8,47 @@ export default function App() {
   const [perfil, setPerfil] = useState(null)
 
   useEffect(() => {
-    // Timeout de segurança: se getSession travar, redireciona para login em 8s
-    const fallback = setTimeout(() => setEstado('login'), 8000)
+    // Busca perfil com timeout para evitar travar em "Carregando..."
+    async function buscarPerfil(email) {
+      const t = new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))
+      const q = supabase.from('usuarios').select('*').eq('email', email.toLowerCase()).maybeSingle()
+      const { data } = await Promise.race([q, t])
+      return data
+    }
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      clearTimeout(fallback)
-      if (session && session.user) {
-        const { data } = await supabase
-          .from('usuarios').select('*')
-          .eq('email', session.user.email.toLowerCase())
-          .maybeSingle()
-        setPerfil(data)
-        setEstado(data ? 'logado' : 'sem-perfil')
-      } else {
+    // Timeout geral: se toda a cadeia travar, vai para login em 14s
+    const fallback = setTimeout(() => setEstado('login'), 14000)
+
+    async function init() {
+      try {
+        const { data: { session } } = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))
+        ])
+        if (session?.user) {
+          const data = await buscarPerfil(session.user.email)
+          setPerfil(data)
+          setEstado(data ? 'logado' : 'sem-perfil')
+        } else {
+          setEstado('login')
+        }
+      } catch {
         setEstado('login')
+      } finally {
+        clearTimeout(fallback)
       }
-    }).catch(() => { clearTimeout(fallback); setEstado('login') })
+    }
+    init()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session && session.user) {
-        const { data } = await supabase
-          .from('usuarios').select('*')
-          .eq('email', session.user.email.toLowerCase())
-          .maybeSingle()
-        setPerfil(data)
-        setEstado(data ? 'logado' : 'sem-perfil')
+      if (session?.user) {
+        try {
+          const data = await buscarPerfil(session.user.email)
+          setPerfil(data)
+          setEstado(data ? 'logado' : 'sem-perfil')
+        } catch {
+          setEstado('login')
+        }
       } else {
         setPerfil(null)
         setEstado('login')
