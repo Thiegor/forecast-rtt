@@ -80,6 +80,13 @@ function Delta({ val, refVal }) {
   return <span style={{fontSize:9,fontWeight:700,color:cor}}>{p>0?"▲":"▼"}{Math.abs(p).toFixed(0)}%</span>
 }
 
+// Retorna true se val difere > 5% do rfc da semana anterior
+function temVariacao(val, rfc) {
+  const v = parseFloat(val)
+  if (!v || !rfc || rfc === 0) return false
+  return Math.abs((v - rfc) / rfc) > 0.05
+}
+
 function fmtDataColeta(iso) {
   if (!iso) return ""
   const d = new Date(iso)
@@ -417,6 +424,21 @@ export default function Forecast({ perfil, onLogout }) {
         return
       }
 
+      // Bloqueia envio se variação > 5% sem comentário
+      const semObs = []
+      for (const reg of registros) {
+        const rfc = getRFC(reg.chave_rfc, reg.mes_referencia)
+        if (temVariacao(reg.receita_prevista, rfc) && !reg.observacoes?.trim()) {
+          semObs.push(`${reg.identificacao} — ${reg.mes_referencia}`)
+        }
+      }
+      if (semObs.length > 0) {
+        const lista = semObs.slice(0, 3).join('\n• ')
+        const extra = semObs.length > 3 ? `\n...e mais ${semObs.length - 3} projeto(s)` : ''
+        setErro(`Comentário obrigatório para variações acima de 5%:\n• ${lista}${extra}`)
+        return
+      }
+
       const upsertPromise = supabase
         .from('forecast_semanal')
         .upsert(registros, { onConflict:'chave_unica' })
@@ -700,35 +722,56 @@ export default function Forecast({ perfil, onLogout }) {
                               </div>
 
                               {/* FORECAST */}
-                              <div style={{background:"rgba(227,30,36,0.04)",borderRadius:5,padding:"0 4px",minHeight:28,display:"flex",flexDirection:"column",justifyContent:"center"}}>
-                                <div style={{display:"flex",gap:2,alignItems:"center"}}>
-                                  <input
-                                    type="number"
-                                    placeholder="—"
-                                    value={getVal(proj.chave_rfc, m.key)}
-                                    onChange={e=>setValor(proj.chave_rfc, m.key, e.target.value)}
-                                    style={{flex:1,background:"transparent",border:"none",borderBottom:`1px solid ${RTT.cinzaBorda2}`,borderRadius:0,padding:"3px 4px",color:RTT.branco,fontSize:12,outline:"none",textAlign:"right",boxSizing:"border-box",fontFamily:F,minWidth:0}}
-                                    onFocus={e=>e.target.style.borderBottomColor=RTT.vermelho}
-                                    onBlur={e=>e.target.style.borderBottomColor=RTT.cinzaBorda2}
-                                  />
-                                  <button
-                                    onClick={()=>toggleObs(obsKey)}
-                                    title="Observação"
-                                    style={{background:"none",border:"none",color:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:11,padding:"2px",lineHeight:1,flexShrink:0}}
-                                  >✎</button>
+                              {(() => {
+                                const valAtual = getVal(proj.chave_rfc, m.key)
+                                const variacaoAlta = temVariacao(valAtual, rfc)
+                                const obsObrig = variacaoAlta && !obsVal?.trim()
+                                return (
+                                <div style={{background:"rgba(227,30,36,0.04)",borderRadius:5,padding:"0 4px",minHeight:28,display:"flex",flexDirection:"column",justifyContent:"center"}}>
+                                  <div style={{display:"flex",gap:2,alignItems:"center"}}>
+                                    <input
+                                      type="number"
+                                      placeholder="—"
+                                      value={valAtual}
+                                      onChange={e => {
+                                        const v = e.target.value
+                                        setValor(proj.chave_rfc, m.key, v)
+                                        // Auto-abre obs se variação > 5% em relação ao RFC s-1
+                                        if (temVariacao(v, rfc)) {
+                                          setObsAbertas(prev => { const n = new Set(prev); n.add(obsKey); return n })
+                                        }
+                                      }}
+                                      style={{flex:1,background:"transparent",border:"none",borderBottom:`1px solid ${RTT.cinzaBorda2}`,borderRadius:0,padding:"3px 4px",color:RTT.branco,fontSize:12,outline:"none",textAlign:"right",boxSizing:"border-box",fontFamily:F,minWidth:0}}
+                                      onFocus={e=>e.target.style.borderBottomColor=RTT.vermelho}
+                                      onBlur={e=>e.target.style.borderBottomColor=RTT.cinzaBorda2}
+                                    />
+                                    <button
+                                      onClick={()=>toggleObs(obsKey)}
+                                      title={obsObrig ? "Comentário obrigatório (variação >5%)" : "Observação"}
+                                      style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:11,padding:"2px",lineHeight:1,flexShrink:0,fontWeight:obsObrig?700:400}}
+                                    >✎</button>
+                                  </div>
+                                  {(obsAberta || obsVal || variacaoAlta) && (
+                                    <>
+                                      {obsObrig && (
+                                        <div style={{fontSize:9,color:RTT.amarelo,fontFamily:F,marginTop:2,paddingLeft:2}}>
+                                          ⚠ comentário obrigatório
+                                        </div>
+                                      )}
+                                      <textarea
+                                        value={obsVal}
+                                        placeholder="Explique a variação..."
+                                        onChange={e=>setValor(proj.chave_rfc, m.key+'_obs', e.target.value)}
+                                        rows={2}
+                                        style={{width:"100%",marginTop:2,background:RTT.cinzaMedio,border:`1px solid ${obsObrig?RTT.amarelo:RTT.cinzaBorda}`,borderRadius:4,padding:"4px 6px",color:RTT.branco,fontSize:11,outline:"none",resize:"none",boxSizing:"border-box",fontFamily:F}}
+                                        onFocus={e=>e.target.style.borderColor=RTT.vermelho}
+                                        onBlur={e=>e.target.style.borderColor=obsObrig?RTT.amarelo:RTT.cinzaBorda}
+                                      />
+                                    </>
+                                  )}
                                 </div>
-                                {(obsAberta || obsVal) && (
-                                  <textarea
-                                    value={obsVal}
-                                    placeholder="Observação..."
-                                    onChange={e=>setValor(proj.chave_rfc, m.key+'_obs', e.target.value)}
-                                    rows={2}
-                                    style={{width:"100%",marginTop:4,background:RTT.cinzaMedio,border:`1px solid ${RTT.cinzaBorda}`,borderRadius:4,padding:"4px 6px",color:RTT.branco,fontSize:11,outline:"none",resize:"none",boxSizing:"border-box",fontFamily:F}}
-                                    onFocus={e=>e.target.style.borderColor=RTT.vermelho}
-                                    onBlur={e=>e.target.style.borderColor=RTT.cinzaBorda}
-                                  />
-                                )}
-                              </div>
+                                )
+                              })()}
                             </div>
                           )
                         })}
