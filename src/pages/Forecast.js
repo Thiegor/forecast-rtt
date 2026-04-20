@@ -438,8 +438,7 @@ export default function Forecast({ perfil, onLogout }) {
         const [resCadastro, resFc, resUltSemana, resBp, resFcAnual] = await Promise.allSettled([
           withTimeout(supabase.from('projetos').select('*').order('identificacao')),
           withTimeout(supabase.from('forecast_semanal').select('*')
-            .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)
-            .gte('data_coleta', inicioJanela.toISOString())),
+            .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)),
           withTimeout(supabase.from('forecast_semanal').select('semana_coleta')
             .eq('ano_referencia', anoAtual)
             .order('semana_coleta', { ascending: false }).limit(1).single()),
@@ -510,10 +509,17 @@ export default function Forecast({ perfil, onLogout }) {
     return fc?.observacoes || ''
   }
 
-  // RFC s-1: lê da semana ANTERIOR
+  // RFC s-1: registro mais recente de semanas ANTERIORES à semana atual.
+  // Garante que dados do envio corrente (semana_coleta = semana) fiquem
+  // apenas no Forecast e não contaminem o RFC s-1.
   function getRFC(chave, mes) {
-    const fc = forecastSemanaAnterior.find(f => f.chave_rfc === chave && f.mes_referencia === mes)
-    return fc ? fc.receita_prevista : 0
+    const registros = forecastAnual.filter(f =>
+      f.chave_rfc === chave &&
+      f.mes_referencia === mes &&
+      f.semana_coleta < semana   // exclui semana atual
+    )
+    if (!registros.length) return 0
+    return registros.reduce((a, b) => b.semana_coleta > a.semana_coleta ? b : a).receita_prevista || 0
   }
 
   // BP: lê de bp_anual por chave_rfc + mes (número 1-12) + ano
@@ -624,8 +630,8 @@ export default function Forecast({ perfil, onLogout }) {
       } else if (!saved || saved.length === 0) {
         setErro('Nenhum registro foi salvo. Verifique sua conexão e tente novamente.')
       } else {
-        // Atualiza state local com os registros enviados (evita re-fetch que pode travar)
-        setForecastSemana(prev => {
+        // Atualiza forecastSemana e forecastAnual localmente (evita re-fetch)
+        const mergeRegistros = (prev) => {
           const updated = [...prev]
           registros.forEach(reg => {
             const idx = updated.findIndex(f => f.chave_unica === reg.chave_unica)
@@ -633,7 +639,9 @@ export default function Forecast({ perfil, onLogout }) {
             else updated.push(reg)
           })
           return updated
-        })
+        }
+        setForecastSemana(mergeRegistros)
+        setForecastAnual(mergeRegistros)
         setValores({})
         setSucesso(true)
         setTimeout(() => setSucesso(false), 4000)
