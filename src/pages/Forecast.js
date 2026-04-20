@@ -658,13 +658,31 @@ export default function Forecast({ perfil, onLogout }) {
       alert('Webhook do Power Automate não configurado. Preencha WEBHOOK_RFC_URL em Forecast.js.')
       return
     }
-    if (!window.confirm(`Deseja re-exportar o RFC da semana ${semana}/${anoAtual} para o SharePoint?`)) return
+
+    // Determina a semana mais recente com dados no banco (pode ser semana anterior à atual)
+    const semanasComDados = [...new Set(forecastAnual.map(f => f.semana_coleta))]
+      .filter(s => typeof s === 'number')
+      .sort((a, b) => b - a)
+    const semanaDefault = semanasComDados[0] ?? semana
+
+    const input = window.prompt(
+      `Exportar RFC de qual semana para o SharePoint?\n\n` +
+      `Semanas disponíveis no banco: ${semanasComDados.slice(0,5).join(', ')}`,
+      String(semanaDefault)
+    )
+    if (input === null) return  // cancelou
+    const semanaExport = parseInt(input, 10)
+    if (isNaN(semanaExport) || semanaExport < 1 || semanaExport > 53) {
+      alert('Semana inválida.')
+      return
+    }
+
     setAtualizandoRFC(true)
     try {
       await fetch(WEBHOOK_RFC_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ semana, ano: anoAtual }),
+        body: JSON.stringify({ semana: semanaExport, ano: anoAtual }),
       })
       setRfcAtualizado(true)
       setTimeout(() => setRfcAtualizado(false), 5000)
