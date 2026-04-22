@@ -871,7 +871,7 @@ export default function Forecast({ perfil, onLogout }) {
           {/* LOGO + KPIs */}
           <div style={{display:"flex",alignItems:"center",gap:24}}>
             <div style={{display:"flex",alignItems:"center",gap:12,paddingRight:24,borderRight:`1px solid ${RTT.cinzaBorda}`}}>
-              <span style={{fontSize:16,fontWeight:800,color:RTT.vermelho,letterSpacing:"-0.02em",fontFamily:F}}>RTT</span>
+              <img src="/logo.png" alt="RTT" style={{height:32,objectFit:"contain"}} />
               <div>
                 <div style={{fontSize:12,fontWeight:600,color:RTT.branco,lineHeight:1.2,fontFamily:F}}>Forecast Semanal</div>
                 <div style={{fontSize:11,color:RTT.cinzaTexto,fontFamily:F}}>S{semana} · {mes1.slice(0,3)}–{mes3.slice(0,3)} {anoAtual}</div>
@@ -966,15 +966,15 @@ export default function Forecast({ perfil, onLogout }) {
             {/* CABEÇALHO DAS COLUNAS — fixo ao rolar */}
             <div style={{position:"sticky",top:52,zIndex:20,background:RTT.preto,paddingTop:4,paddingBottom:2}}>
               <div style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 64px",gap:6}}>
-                <div style={{fontSize:10,fontWeight:500,color:RTT.cinzaTexto,fontFamily:F,alignSelf:"flex-end",paddingBottom:6}}>Projeto</div>
+                <div style={{fontSize:12,fontWeight:500,color:RTT.cinzaTexto,fontFamily:F,alignSelf:"flex-end",paddingBottom:6}}>Projeto</div>
                 {MESES.map(m=>(
                   <div key={m.key} style={{background:RTT.cinzaEscuro,border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,overflow:"hidden"}}>
-                    <div style={{padding:"6px 10px 4px",borderBottom:`1px solid ${RTT.cinzaBorda}`}}>
-                      <span style={{fontSize:11,fontWeight:700,color:RTT.branco,fontFamily:F,letterSpacing:"-0.01em"}}>{m.label.slice(0,3)} <span style={{color:RTT.cinzaTexto,fontWeight:400}}>{m.ano}</span></span>
+                    <div style={{padding:"7px 10px 5px",borderBottom:`1px solid ${RTT.cinzaBorda}`,textAlign:"center"}}>
+                      <span style={{fontSize:13,fontWeight:700,color:RTT.branco,fontFamily:F,letterSpacing:"-0.01em"}}>{m.label.slice(0,3)} <span style={{color:RTT.cinzaTexto,fontWeight:400}}>{m.ano}</span></span>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr"}}>
                       {[{l:"BP",c:RTT.amarelo},{l:"RFC s-1",c:RTT.cinzaClaro},{l:"Forecast",c:RTT.vermelho}].map(s=>(
-                        <div key={s.l} style={{padding:"3px 6px",textAlign:"center",fontSize:10,fontWeight:600,color:s.c,fontFamily:F,background:s.l==="Forecast"?"rgba(227,30,36,0.05)":"transparent"}}>{s.l}</div>
+                        <div key={s.l} style={{padding:"4px 6px",textAlign:"center",fontSize:12,fontWeight:600,color:s.c,fontFamily:F,background:s.l==="Forecast"?"rgba(227,30,36,0.05)":"transparent"}}>{s.l}</div>
                       ))}
                     </div>
                   </div>
@@ -1045,8 +1045,8 @@ export default function Forecast({ perfil, onLogout }) {
                                 const variacaoAlta = temVariacao(valAtual, rfc)
                                 const obsObrig = variacaoAlta && !obsVal?.trim()
                                 return (
-                                <div style={{background:"rgba(227,30,36,0.04)",borderRadius:5,padding:"0 4px",minHeight:28,display:"flex",flexDirection:"column",justifyContent:"center"}}>
-                                  <div style={{display:"flex",gap:2,alignItems:"center"}}>
+                                <div style={{background:"rgba(227,30,36,0.04)",borderRadius:5,padding:"2px 4px",minHeight:36,display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"stretch"}}>
+                                  <div style={{display:"flex",justifyContent:"center"}}>
                                     <input
                                       type="number"
                                       placeholder="—"
@@ -1059,20 +1059,22 @@ export default function Forecast({ perfil, onLogout }) {
                                           setObsAbertas(prev => { const n = new Set(prev); n.add(obsKey); return n })
                                         }
                                       }}
-                                      style={{flex:1,background:"transparent",border:"none",borderBottom:`1px solid ${RTT.cinzaBorda2}`,borderRadius:0,padding:"3px 2px",color:RTT.branco,fontSize:11,outline:"none",textAlign:"right",boxSizing:"border-box",fontFamily:F,minWidth:0,maxWidth:52}}
+                                      style={{width:"100%",background:"transparent",border:"none",borderBottom:`1px solid ${RTT.cinzaBorda2}`,borderRadius:0,padding:"2px 4px",color:RTT.branco,fontSize:11,outline:"none",textAlign:"center",boxSizing:"border-box",fontFamily:F}}
                                       onFocus={e=>e.target.style.borderBottomColor=RTT.vermelho}
                                       onBlur={e=>e.target.style.borderBottomColor=RTT.cinzaBorda2}
                                     />
+                                  </div>
+                                  <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:3}}>
                                     <button
                                       onClick={()=>toggleObs(obsKey)}
                                       title={obsObrig ? "Comentário obrigatório (variação >5%)" : "Observação"}
-                                      style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:13,padding:"3px",lineHeight:1,flexShrink:0,fontWeight:obsObrig?700:400}}
+                                      style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:13,padding:"1px 3px",lineHeight:1,fontWeight:obsObrig?700:400}}
                                     >✎</button>
                                     {m.key === 'mes1' && isJanelaFechamento(perfil.perfil) && (
                                       <button
                                         onClick={()=>{ setModalComprovacao(proj); setUploadArquivo(null); setErroArquivo(null) }}
                                         title="Enviar comprovação de receita"
-                                        style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:13,padding:"3px",lineHeight:1,flexShrink:0}}
+                                        style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:13,padding:"1px 3px",lineHeight:1}}
                                         onMouseEnter={e=>e.currentTarget.style.color=RTT.vermelho}
                                         onMouseLeave={e=>e.currentTarget.style.color=RTT.cinzaTexto}
                                       >📎</button>
