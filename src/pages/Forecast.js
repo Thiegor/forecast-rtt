@@ -978,7 +978,7 @@ export default function Forecast({ perfil, onLogout }) {
 
                         {/* BOTÕES: REPLICAR + PAINEL ANUAL */}
                         <div style={{display:"flex",flexDirection:"column",gap:4,paddingTop:2}}>
-                          {perfil.perfil==='gestor' && (
+                          {(perfil.perfil==='gestor' || perfil.perfil==='admin') && (
                             <button
                               onClick={()=>replicarRFC(proj)}
                               title="Replicar forecast da semana anterior"
