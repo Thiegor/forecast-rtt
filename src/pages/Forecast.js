@@ -1068,6 +1068,15 @@ export default function Forecast({ perfil, onLogout }) {
                                       title={obsObrig ? "Comentário obrigatório (variação >5%)" : "Observação"}
                                       style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:11,padding:"2px",lineHeight:1,flexShrink:0,fontWeight:obsObrig?700:400}}
                                     >✎</button>
+                                    {m.key === 'mes1' && isJanelaFechamento(perfil.perfil) && (
+                                      <button
+                                        onClick={()=>{ setModalComprovacao(proj); setUploadArquivo(null); setErroArquivo(null) }}
+                                        title="Enviar comprovação de receita"
+                                        style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:11,padding:"2px",lineHeight:1,flexShrink:0}}
+                                        onMouseEnter={e=>e.currentTarget.style.color=RTT.vermelho}
+                                        onMouseLeave={e=>e.currentTarget.style.color=RTT.cinzaTexto}
+                                      >📎</button>
+                                    )}
                                   </div>
                                   {(obsAberta || obsVal || variacaoAlta) && (
                                     <>
@@ -1094,17 +1103,8 @@ export default function Forecast({ perfil, onLogout }) {
                           )
                         })}
 
-                        {/* BOTÕES: COMPROVAÇÃO + REPLICAR + PAINEL ANUAL */}
+                        {/* BOTÕES: REPLICAR + PAINEL ANUAL */}
                         <div style={{display:"flex",flexDirection:"column",gap:4,paddingTop:2}}>
-                          {isJanelaFechamento(perfil.perfil) && (
-                            <button
-                              onClick={()=>{ setModalComprovacao(proj); setUploadArquivo(null); setErroArquivo(null) }}
-                              title="Enviar comprovação de receita"
-                              style={{width:28,height:28,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,color:RTT.cinzaTexto,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}
-                              onMouseEnter={e=>{e.currentTarget.style.borderColor=RTT.vermelho;e.currentTarget.style.color=RTT.vermelho}}
-                              onMouseLeave={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda;e.currentTarget.style.color=RTT.cinzaTexto}}
-                            >📎</button>
-                          )}
                           {(perfil.perfil==='gestor' || perfil.perfil==='admin') && (
                             <button
                               onClick={()=>replicarRFC(proj)}
