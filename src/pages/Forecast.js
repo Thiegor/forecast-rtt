@@ -1059,20 +1059,20 @@ export default function Forecast({ perfil, onLogout }) {
                                           setObsAbertas(prev => { const n = new Set(prev); n.add(obsKey); return n })
                                         }
                                       }}
-                                      style={{flex:1,background:"transparent",border:"none",borderBottom:`1px solid ${RTT.cinzaBorda2}`,borderRadius:0,padding:"3px 4px",color:RTT.branco,fontSize:12,outline:"none",textAlign:"right",boxSizing:"border-box",fontFamily:F,minWidth:0}}
+                                      style={{flex:1,background:"transparent",border:"none",borderBottom:`1px solid ${RTT.cinzaBorda2}`,borderRadius:0,padding:"3px 2px",color:RTT.branco,fontSize:11,outline:"none",textAlign:"right",boxSizing:"border-box",fontFamily:F,minWidth:0,maxWidth:52}}
                                       onFocus={e=>e.target.style.borderBottomColor=RTT.vermelho}
                                       onBlur={e=>e.target.style.borderBottomColor=RTT.cinzaBorda2}
                                     />
                                     <button
                                       onClick={()=>toggleObs(obsKey)}
                                       title={obsObrig ? "Comentário obrigatório (variação >5%)" : "Observação"}
-                                      style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:11,padding:"2px",lineHeight:1,flexShrink:0,fontWeight:obsObrig?700:400}}
+                                      style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:13,padding:"3px",lineHeight:1,flexShrink:0,fontWeight:obsObrig?700:400}}
                                     >✎</button>
                                     {m.key === 'mes1' && isJanelaFechamento(perfil.perfil) && (
                                       <button
                                         onClick={()=>{ setModalComprovacao(proj); setUploadArquivo(null); setErroArquivo(null) }}
                                         title="Enviar comprovação de receita"
-                                        style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:11,padding:"2px",lineHeight:1,flexShrink:0}}
+                                        style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:13,padding:"3px",lineHeight:1,flexShrink:0}}
                                         onMouseEnter={e=>e.currentTarget.style.color=RTT.vermelho}
                                         onMouseLeave={e=>e.currentTarget.style.color=RTT.cinzaTexto}
                                       >📎</button>
