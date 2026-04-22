@@ -31,6 +31,7 @@ const MESES_LONGOS = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Jul
 
 // URL do webhook Power Automate — preencher após criar o flow "Exportar RFC Semanal"
 const WEBHOOK_RFC_URL = 'https://default3ba4e9dd629e40049c62708d327b58.a5.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/dc05767c636d47efba1a2047b56c8dae/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=NHSaWdpp9beT-x-B3VJfYXpuf_en2MKdr2u6OW9mlhw'
+const WEBHOOK_COMPROVACAO_URL = '' // preencher após criar o flow "RTT — Upload Comprovação" no PA
 
 const CONFIANCA_OPTS = [
   { label: "Confirmado", cor: "#22c55e", corFundo: "rgba(34,197,94,0.15)", corBorda: "rgba(34,197,94,0.4)" },
@@ -52,6 +53,17 @@ function isJanelaAberta() {
   const hora = now.getHours() + now.getMinutes() / 60
   if (dia === 4 && hora >= 9) return true
   if (dia === 5 && hora < 12) return true
+  return false
+}
+
+function isJanelaFechamento(perfilAtual) {
+  if (perfilAtual === 'admin') return true
+  const hoje = new Date()
+  const dia = hoje.getDate()
+  const diaSemana = hoje.getDay()
+  const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate()
+  if (dia === ultimoDia) return true
+  if (dia <= 5 && diaSemana >= 1 && diaSemana <= 5) return true
   return false
 }
 
@@ -95,6 +107,52 @@ function fmtDataColeta(iso) {
   const h   = String(d.getHours()).padStart(2,'0')
   const min = String(d.getMinutes()).padStart(2,'0')
   return `${dia}/${mes} ${h}:${min}`
+}
+
+function ModalComprovacao({ proj, uploadArquivo, setUploadArquivo, enviando, sucesso, erro, onEnviar, onClose }) {
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:1100,display:'flex'}}>
+      <div onClick={onClose} style={{flex:1,background:'rgba(0,0,0,0.7)'}} />
+      <div style={{width:420,background:RTT.cinzaEscuro,display:'flex',flexDirection:'column',fontFamily:F}}>
+        <div style={{padding:'16px 20px',borderBottom:`1px solid ${RTT.cinzaBorda}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style={{color:RTT.cinzaClaro,fontSize:11,textTransform:'uppercase',letterSpacing:'0.05em'}}>Comprovação de Receita</div>
+            <div style={{color:RTT.branco,fontSize:14,fontWeight:600,marginTop:2}}>{proj.identificacao}</div>
+          </div>
+          <button onClick={onClose} style={{background:'none',border:'none',color:RTT.cinzaClaro,cursor:'pointer',fontSize:20,lineHeight:1}}>×</button>
+        </div>
+        <div style={{flex:1,padding:20}}>
+          <p style={{color:RTT.cinzaClaro,fontSize:12,margin:'0 0 16px',lineHeight:'1.5'}}>
+            Selecione o arquivo de comprovação (PDF ou Excel) referente ao fechamento do mês.
+          </p>
+          <input
+            type="file"
+            accept=".pdf,.xlsx,.xls,.csv,.ods"
+            onChange={e => setUploadArquivo(e.target.files[0] || null)}
+            style={{color:RTT.branco,fontSize:12,width:'100%',cursor:'pointer'}}
+          />
+          {uploadArquivo && (
+            <div style={{marginTop:12,color:RTT.verde,fontSize:12,display:'flex',alignItems:'center',gap:6}}>
+              ✓ {uploadArquivo.name} <span style={{color:RTT.cinzaClaro}}>({(uploadArquivo.size/1024).toFixed(0)} KB)</span>
+            </div>
+          )}
+          {erro && <div style={{marginTop:12,color:RTT.vermelho,fontSize:12}}>{erro}</div>}
+          {sucesso && <div style={{marginTop:12,color:RTT.verde,fontSize:13,fontWeight:600}}>✓ Comprovação enviada com sucesso!</div>}
+        </div>
+        <div style={{padding:16,borderTop:`1px solid ${RTT.cinzaBorda}`}}>
+          <button
+            onClick={onEnviar}
+            disabled={!uploadArquivo || enviando}
+            style={{width:'100%',height:40,background:uploadArquivo&&!enviando?RTT.vermelho:RTT.cinzaBorda,
+                    color:RTT.branco,border:'none',borderRadius:6,
+                    cursor:uploadArquivo&&!enviando?'pointer':'default',fontSize:14,fontWeight:600,fontFamily:F}}
+          >
+            {enviando ? 'Enviando...' : 'Enviar Comprovação'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function PainelAnual({ proj, mesAtualIdx, forecastAnual, onClose, perfil, semana }) {
@@ -383,6 +441,11 @@ export default function Forecast({ perfil, onLogout }) {
   const [erro, setErro] = useState(null)
   const [painel, setPainel] = useState(null)
   const [filtro, setFiltro] = useState("Todos")
+  const [modalComprovacao, setModalComprovacao] = useState(null)
+  const [uploadArquivo, setUploadArquivo]       = useState(null)
+  const [enviandoArquivo, setEnviandoArquivo]   = useState(false)
+  const [erroArquivo, setErroArquivo]           = useState(null)
+  const [sucessoArquivo, setSucessoArquivo]     = useState(false)
   const [bpAnual, setBpAnual] = useState([])
   const [forecastAnual, setForecastAnual] = useState([])
   const [atualizandoRFC, setAtualizandoRFC] = useState(false)
@@ -650,6 +713,61 @@ export default function Forecast({ perfil, onLogout }) {
       setErro('Erro ao enviar: ' + (e.message === 'timeout' ? 'Servidor demorou demais (30s). Tente novamente.' : e.message))
     } finally {
       setEnviando(false)
+    }
+  }
+
+  async function handleUploadComprovacao() {
+    if (!uploadArquivo || !modalComprovacao) return
+    setEnviandoArquivo(true)
+    setErroArquivo(null)
+    try {
+      const hoje = new Date()
+      const dia = hoje.getDate()
+      const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate()
+      const mesIdx = dia === ultimoDia ? hoje.getMonth() : (hoje.getMonth() - 1 + 12) % 12
+      const anoRef = dia <= 5 && hoje.getMonth() === 0 ? hoje.getFullYear() - 1 : hoje.getFullYear()
+      const mes_label = MESES_LONGOS[mesIdx]
+      const mes_num   = String(mesIdx + 1).padStart(2, '0')
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload  = e => resolve(e.target.result.split(',')[1])
+        reader.onerror = reject
+        reader.readAsDataURL(uploadArquivo)
+      })
+      if (!WEBHOOK_COMPROVACAO_URL) throw new Error('Webhook não configurado. Preencha WEBHOOK_COMPROVACAO_URL.')
+      const resp = await fetch(WEBHOOK_COMPROVACAO_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gestor: perfil.nome,
+          cod_projeto: String(modalComprovacao.cod_projeto || ''),
+          identificacao: modalComprovacao.identificacao || '',
+          mes_num, mes_label,
+          ano: String(anoRef),
+          filename: uploadArquivo.name,
+          mimetype: uploadArquivo.type,
+          content_base64: base64,
+        })
+      })
+      if (!resp.ok) throw new Error('Erro no SharePoint (' + resp.status + ')')
+      await supabase.from('comprovacoes').insert({
+        gerente_site:   perfil.nome,
+        cod_projeto:    String(modalComprovacao.cod_projeto || ''),
+        identificacao:  modalComprovacao.identificacao,
+        mes_referencia: mes_label,
+        ano_referencia: anoRef,
+        arquivo_nome:   uploadArquivo.name,
+      })
+      setSucessoArquivo(true)
+      setTimeout(() => {
+        setSucessoArquivo(false)
+        setModalComprovacao(null)
+        setUploadArquivo(null)
+      }, 3000)
+    } catch(e) {
+      setErroArquivo('Erro: ' + e.message)
+    } finally {
+      setEnviandoArquivo(false)
     }
   }
 
@@ -976,8 +1094,17 @@ export default function Forecast({ perfil, onLogout }) {
                           )
                         })}
 
-                        {/* BOTÕES: REPLICAR + PAINEL ANUAL */}
+                        {/* BOTÕES: COMPROVAÇÃO + REPLICAR + PAINEL ANUAL */}
                         <div style={{display:"flex",flexDirection:"column",gap:4,paddingTop:2}}>
+                          {isJanelaFechamento(perfil.perfil) && (
+                            <button
+                              onClick={()=>{ setModalComprovacao(proj); setUploadArquivo(null); setErroArquivo(null) }}
+                              title="Enviar comprovação de receita"
+                              style={{width:28,height:28,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,color:RTT.cinzaTexto,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}
+                              onMouseEnter={e=>{e.currentTarget.style.borderColor=RTT.vermelho;e.currentTarget.style.color=RTT.vermelho}}
+                              onMouseLeave={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda;e.currentTarget.style.color=RTT.cinzaTexto}}
+                            >📎</button>
+                          )}
                           {(perfil.perfil==='gestor' || perfil.perfil==='admin') && (
                             <button
                               onClick={()=>replicarRFC(proj)}
@@ -1039,6 +1166,15 @@ export default function Forecast({ perfil, onLogout }) {
       </main>
 
       {painel && <PainelAnual proj={painel} mesAtualIdx={mesAtualIdx} forecastAnual={forecastAnual} onClose={()=>setPainel(null)} perfil={perfil} semana={semana}/>}
+      {modalComprovacao && (
+        <ModalComprovacao
+          proj={modalComprovacao}
+          uploadArquivo={uploadArquivo} setUploadArquivo={setUploadArquivo}
+          enviando={enviandoArquivo} sucesso={sucessoArquivo} erro={erroArquivo}
+          onEnviar={handleUploadComprovacao}
+          onClose={()=>{ setModalComprovacao(null); setUploadArquivo(null); setErroArquivo(null) }}
+        />
+      )}
     </div>
   )
 }
