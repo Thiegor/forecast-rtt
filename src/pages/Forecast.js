@@ -871,7 +871,7 @@ export default function Forecast({ perfil, onLogout }) {
           {/* LOGO + KPIs */}
           <div style={{display:"flex",alignItems:"center",gap:24}}>
             <div style={{display:"flex",alignItems:"center",gap:12,paddingRight:24,borderRight:`1px solid ${RTT.cinzaBorda}`}}>
-              <img src="/logo.png" alt="RTT" style={{height:32,objectFit:"contain"}} />
+              <span style={{fontSize:16,fontWeight:800,color:RTT.vermelho,letterSpacing:"-0.02em",fontFamily:F}}>RTT</span>
               <div>
                 <div style={{fontSize:12,fontWeight:600,color:RTT.branco,lineHeight:1.2,fontFamily:F}}>Forecast Semanal</div>
                 <div style={{fontSize:11,color:RTT.cinzaTexto,fontFamily:F}}>S{semana} · {mes1.slice(0,3)}–{mes3.slice(0,3)} {anoAtual}</div>
