@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import Login from './pages/Login'
 import Forecast from './pages/Forecast'
+import PainelReceita from './pages/PainelReceita'
+import RedefinirSenha from './pages/RedefinirSenha'
 
 const CACHE_KEY = 'rtt_perfil_cache'
 
@@ -26,6 +28,7 @@ function limparCache() {
 export default function App() {
   const [estado, setEstado] = useState('carregando')
   const [perfil, setPerfil] = useState(null)
+  const [pagina, setPagina] = useState('forecast')
 
   useEffect(() => {
     // Busca perfil com timeout generoso para cold starts do Supabase free tier
@@ -83,6 +86,9 @@ export default function App() {
         setEstado('login')
         return
       }
+      // Usuário clicou no link de "Esqueci minha senha": mostrar tela de redefinição
+      if (event === 'PASSWORD_RECOVERY') { setEstado('recovery'); return }
+
       // TOKEN_REFRESHED / USER_UPDATED: sessão ainda válida, não re-busca
       if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') return
 
@@ -129,7 +135,10 @@ export default function App() {
   }
 
   if (estado === 'logado' && perfil) {
-    return <Forecast perfil={perfil} onLogout={handleLogout} />
+    if (pagina === 'painel' && perfil.perfil === 'admin') {
+      return <PainelReceita perfil={perfil} onLogout={handleLogout} onNavigate={setPagina} />
+    }
+    return <Forecast perfil={perfil} onLogout={handleLogout} onNavigate={setPagina} />
   }
 
   if (estado === 'sem-perfil') {
@@ -144,6 +153,10 @@ export default function App() {
         </div>
       </div>
     )
+  }
+
+  if (estado === 'recovery') {
+    return <RedefinirSenha onConcluido={() => { limparCache(); supabase.auth.signOut(); setEstado('login') }} />
   }
 
   return <Login onLogin={handleLogin} />

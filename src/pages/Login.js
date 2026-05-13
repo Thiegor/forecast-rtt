@@ -47,7 +47,7 @@ export default function Login({ onLogin }) {
     setResetLoading(true)
     setErro('')
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin + '/forecast-rtt',
+      redirectTo: 'https://thiegor.github.io/forecast-rtt/',
     })
     setResetLoading(false)
     if (error) {

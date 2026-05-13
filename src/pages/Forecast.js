@@ -49,10 +49,10 @@ function getISOWeek(date) {
 
 function isJanelaAberta() {
   const now = new Date()
-  const dia = now.getDay() // 4=quinta, 5=sexta
+  const dia = now.getDay() // 1=segunda … 5=sexta
   const hora = now.getHours() + now.getMinutes() / 60
-  if (dia === 4 && hora >= 9) return true
-  if (dia === 5 && hora < 12) return true
+  if (dia >= 1 && dia <= 4) return true          // segunda a quinta: aberto
+  if (dia === 5 && hora < 12) return true         // sexta até 12h
   return false
 }
 
@@ -78,6 +78,16 @@ function fmtShort(val) {
   if (val >= 1000000) return `${(val/1000000).toFixed(1)}M`
   if (val >= 1000) return `${(val/1000).toFixed(0)}K`
   return Math.round(val).toLocaleString("pt-BR")
+}
+
+// Formata valor raw ("1234567.89" ou number) para exibição pt-BR "1.234.567,89"
+function formatInputBRL(val) {
+  if (val === '' || val === undefined || val === null) return ''
+  const str = String(val)
+  const parts = str.split('.')
+  const intNum = parseInt(parts[0])
+  const formattedInt = isNaN(intNum) ? '' : intNum.toLocaleString('pt-BR')
+  return parts.length > 1 ? `${formattedInt},${parts[1]}` : formattedInt
 }
 
 function calcPct(a, b) {
@@ -109,11 +119,11 @@ function fmtDataColeta(iso) {
   return `${dia}/${mes} ${h}:${min}`
 }
 
-function ModalComprovacao({ proj, uploadArquivo, setUploadArquivo, enviando, sucesso, erro, onEnviar, onClose }) {
+function ModalComprovacao({ proj, uploadArquivo, setUploadArquivo, enviando, sucesso, erro, onEnviar, onClose, isMobile }) {
   return (
     <div style={{position:'fixed',inset:0,zIndex:1100,display:'flex'}}>
       <div onClick={onClose} style={{flex:1,background:'rgba(0,0,0,0.7)'}} />
-      <div style={{width:420,background:RTT.cinzaEscuro,display:'flex',flexDirection:'column',fontFamily:F}}>
+      <div style={{width:isMobile?'100%':420,background:RTT.cinzaEscuro,display:'flex',flexDirection:'column',fontFamily:F}}>
         <div style={{padding:'16px 20px',borderBottom:`1px solid ${RTT.cinzaBorda}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div>
             <div style={{color:RTT.cinzaClaro,fontSize:11,textTransform:'uppercase',letterSpacing:'0.05em'}}>Comprovação de Receita</div>
@@ -155,7 +165,91 @@ function ModalComprovacao({ proj, uploadArquivo, setUploadArquivo, enviando, suc
   )
 }
 
-function PainelAnual({ proj, mesAtualIdx, forecastAnual, onClose, perfil, semana }) {
+function ModalTrocarSenha({ onClose }) {
+  const [senhaAtual, setSenhaAtual]   = useState('')
+  const [novaSenha, setNovaSenha]     = useState('')
+  const [confirmSenha, setConfirm]    = useState('')
+  const [salvando, setSalvando]       = useState(false)
+  const [erro, setErro]               = useState(null)
+  const [sucesso, setSucesso]         = useState(false)
+
+  async function handleSalvar() {
+    setErro(null)
+    if (!senhaAtual || !novaSenha || !confirmSenha) { setErro('Preencha todos os campos.'); return }
+    if (novaSenha.length < 6) { setErro('A nova senha deve ter ao menos 6 caracteres.'); return }
+    if (novaSenha !== confirmSenha) { setErro('As senhas não coincidem.'); return }
+    setSalvando(true)
+    try {
+      // Verifica senha atual via re-autenticação
+      const { data: { session } } = await supabase.auth.getSession()
+      const email = session?.user?.email
+      const { error: errLogin } = await supabase.auth.signInWithPassword({ email, password: senhaAtual })
+      if (errLogin) { setErro('Senha atual incorreta.'); return }
+      // Atualiza para nova senha
+      const { error: errUpdate } = await supabase.auth.updateUser({ password: novaSenha })
+      if (errUpdate) { setErro(errUpdate.message); return }
+      setSucesso(true)
+      setTimeout(onClose, 2000)
+    } catch (e) {
+      setErro(e.message)
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  const inputStyle = {
+    width: '100%', background: 'transparent', border: `1px solid ${RTT.cinzaBorda}`,
+    borderRadius: 6, padding: '8px 12px', color: RTT.branco, fontSize: 13,
+    outline: 'none', fontFamily: F, boxSizing: 'border-box',
+  }
+
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:1200,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.7)'}}>
+      <div style={{width:360,background:RTT.cinzaEscuro,border:`1px solid ${RTT.cinzaBorda}`,borderRadius:10,overflow:'hidden',fontFamily:F}}>
+        {/* Header */}
+        <div style={{padding:'16px 20px',borderBottom:`1px solid ${RTT.cinzaBorda}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div style={{fontSize:14,fontWeight:600,color:RTT.branco}}>Trocar Senha</div>
+          <button onClick={onClose} style={{background:'none',border:'none',color:RTT.cinzaClaro,cursor:'pointer',fontSize:20,lineHeight:1}}>×</button>
+        </div>
+        {/* Body */}
+        <div style={{padding:20,display:'flex',flexDirection:'column',gap:14}}>
+          {sucesso ? (
+            <div style={{textAlign:'center',padding:'20px 0'}}>
+              <div style={{fontSize:32,marginBottom:8}}>✅</div>
+              <div style={{color:RTT.verde,fontWeight:600,fontSize:14}}>Senha alterada com sucesso!</div>
+            </div>
+          ) : (
+            <>
+              <div>
+                <div style={{fontSize:11,color:RTT.cinzaClaro,marginBottom:6}}>Senha atual</div>
+                <input type="password" value={senhaAtual} onChange={e=>setSenhaAtual(e.target.value)} style={inputStyle}
+                  onFocus={e=>e.target.style.borderColor=RTT.vermelho} onBlur={e=>e.target.style.borderColor=RTT.cinzaBorda}/>
+              </div>
+              <div>
+                <div style={{fontSize:11,color:RTT.cinzaClaro,marginBottom:6}}>Nova senha</div>
+                <input type="password" value={novaSenha} onChange={e=>setNovaSenha(e.target.value)} style={inputStyle}
+                  onFocus={e=>e.target.style.borderColor=RTT.vermelho} onBlur={e=>e.target.style.borderColor=RTT.cinzaBorda}/>
+              </div>
+              <div>
+                <div style={{fontSize:11,color:RTT.cinzaClaro,marginBottom:6}}>Confirmar nova senha</div>
+                <input type="password" value={confirmSenha} onChange={e=>setConfirm(e.target.value)} style={inputStyle}
+                  onFocus={e=>e.target.style.borderColor=RTT.vermelho} onBlur={e=>e.target.style.borderColor=RTT.cinzaBorda}
+                  onKeyDown={e=>e.key==='Enter'&&handleSalvar()}/>
+              </div>
+              {erro && <div style={{fontSize:12,color:RTT.vermelho}}>{erro}</div>}
+              <button onClick={handleSalvar} disabled={salvando}
+                style={{width:'100%',height:40,background:RTT.vermelho,color:'#fff',border:'none',borderRadius:6,fontSize:13,fontWeight:600,cursor:salvando?'not-allowed':'pointer',opacity:salvando?0.7:1,fontFamily:F}}>
+                {salvando ? 'Salvando...' : 'Salvar Nova Senha'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PainelAnual({ proj, mesAtualIdx, forecastAnual, onClose, perfil, semana, isMobile }) {
   const anoAtual = new Date().getFullYear()
   const mesesRolantes = [mesAtualIdx, mesAtualIdx+1, mesAtualIdx+2]
   // Meses editáveis: a partir do 4º mês seguinte ao atual (excluindo os 3 do formulário e os passados)
@@ -281,7 +375,7 @@ function PainelAnual({ proj, mesAtualIdx, forecastAnual, onClose, perfil, semana
   return (
     <div style={{position:"fixed",inset:0,zIndex:1000,display:"flex"}}>
       <div onClick={onClose} style={{flex:1,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(3px)"}}/>
-      <div style={{width:520,background:RTT.cinzaEscuro,borderLeft:`1px solid ${RTT.cinzaBorda}`,display:"flex",flexDirection:"column",overflow:"hidden",fontFamily:F}}>
+      <div style={{width:isMobile?'100%':520,background:RTT.cinzaEscuro,borderLeft:`1px solid ${RTT.cinzaBorda}`,display:"flex",flexDirection:"column",overflow:"hidden",fontFamily:F}}>
         {/* HEADER */}
         <div style={{padding:"20px 24px 16px",borderBottom:`1px solid ${RTT.cinzaBorda}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
@@ -429,7 +523,7 @@ function PainelAnual({ proj, mesAtualIdx, forecastAnual, onClose, perfil, semana
   )
 }
 
-export default function Forecast({ perfil, onLogout }) {
+export default function Forecast({ perfil, onLogout, onNavigate }) {
   const [projetosCadastro, setProjetosCadastro] = useState([])
   const [forecastSemana, setForecastSemana] = useState([])
   const [forecastSemanaAnterior, setForecastSemanaAnterior] = useState([])
@@ -442,6 +536,7 @@ export default function Forecast({ perfil, onLogout }) {
   const [painel, setPainel] = useState(null)
   const [filtro, setFiltro] = useState("Todos")
   const [modalComprovacao, setModalComprovacao] = useState(null)
+  const [modalTrocarSenha, setModalTrocarSenha] = useState(false)
   const [uploadArquivo, setUploadArquivo]       = useState(null)
   const [enviandoArquivo, setEnviandoArquivo]   = useState(false)
   const [erroArquivo, setErroArquivo]           = useState(null)
@@ -450,6 +545,13 @@ export default function Forecast({ perfil, onLogout }) {
   const [forecastAnual, setForecastAnual] = useState([])
   const [atualizandoRFC, setAtualizandoRFC] = useState(false)
   const [rfcAtualizado, setRfcAtualizado] = useState(false)
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
 
   const now = new Date()
   const semana = getISOWeek(now)
@@ -485,12 +587,12 @@ export default function Forecast({ perfil, onLogout }) {
     async function carregar() {
       setLoading(true)
       try {
-        // Início da janela atual: última quinta-feira às 9h
+        // Início da janela atual: última segunda-feira
         const agora = new Date()
         const inicioJanela = new Date(agora)
-        const diasDesdeQuinta = (agora.getDay() + 7 - 4) % 7
-        inicioJanela.setDate(agora.getDate() - diasDesdeQuinta)
-        inicioJanela.setHours(9, 0, 0, 0)
+        const diasDesdeSegunda = (agora.getDay() + 6) % 7
+        inicioJanela.setDate(agora.getDate() - diasDesdeSegunda)
+        inicioJanela.setHours(0, 0, 0, 0)
         const mesesNums = [mesAtualIdx + 1, (mesAtualIdx + 1) % 12 + 1, (mesAtualIdx + 2) % 12 + 1]
 
         function withTimeout(promise, ms = 12000) {
@@ -504,6 +606,7 @@ export default function Forecast({ perfil, onLogout }) {
             .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)),
           withTimeout(supabase.from('forecast_semanal').select('semana_coleta')
             .eq('ano_referencia', anoAtual)
+            .lt('semana_coleta', semana)
             .order('semana_coleta', { ascending: false }).limit(1).single()),
           withTimeout(supabase.from('bp_anual').select('*').eq('ano', anoAtual).in('mes', mesesNums)),
           withTimeout(supabase.from('forecast_semanal').select('*').eq('ano_referencia', anoAtual)),
@@ -614,7 +717,7 @@ export default function Forecast({ perfil, onLogout }) {
     ? registrosGestor.sort((a,b) => new Date(b.data_coleta) - new Date(a.data_coleta))[0]?.data_coleta
     : null
 
-  // Para admin: quais gestores já enviaram esta semana
+  // Para admin/regional: quais gestores já enviaram esta semana
   const gerentesQueEnviaram = new Set(forecastSemana.map(f => f.gerente_site))
 
   async function handleEnviar() {
@@ -628,6 +731,25 @@ export default function Forecast({ perfil, onLogout }) {
         { key:'mes3', label:mes3, ano:ano3 },
       ]
 
+      // Para gestores e regionais: validar se todos os campos estão preenchidos
+      if (perfil.perfil === 'gestor' || perfil.perfil === 'regional') {
+        const camposVazios = []
+        for (const proj of itensFiltrados) {
+          const chave_rfc = proj.chave_rfc
+          for (const m of mesesMap) {
+            const foiPreenchido = valores[chave_rfc]?.[m.key] !== undefined
+              || forecastSemana.some(f => f.chave_rfc === chave_rfc && f.mes_referencia === m.label)
+            if (!foiPreenchido) camposVazios.push(`${proj.identificacao} — ${m.label}`)
+          }
+        }
+        if (camposVazios.length > 0) {
+          const lista = camposVazios.slice(0, 3).map(c => `• ${c}`).join('\n')
+          const extra = camposVazios.length > 3 ? `\n...e mais ${camposVazios.length - 3} campo(s)` : ''
+          setErro(`Preencha todos os campos antes de enviar:\n${lista}${extra}`)
+          return
+        }
+      }
+
       for (const proj of itensFiltrados) {
         const chave_rfc = proj.chave_rfc
         for (const m of mesesMap) {
@@ -635,7 +757,8 @@ export default function Forecast({ perfil, onLogout }) {
           const valStr = valores[chave_rfc]?.[m.key]
           const valExistente = forecastSemana.find(f => f.chave_rfc === chave_rfc && f.mes_referencia === m.label)?.receita_prevista
           const val = valStr !== undefined ? parseFloat(valStr) : valExistente
-          if (!val || val === 0) continue
+          // Pula apenas se não houver valor algum (null/undefined) — zero é válido
+          if (val === undefined || val === null || isNaN(val)) continue
 
           const confianca = valores[chave_rfc]?.[m.key+'_confianca']
             ?? forecastSemana.find(f => f.chave_rfc === chave_rfc && f.mes_referencia === m.label)?.confianca
@@ -854,23 +977,28 @@ export default function Forecast({ perfil, onLogout }) {
   })
   const itens = Object.values(itensMap).sort((a, b) => a.identificacao.localeCompare(b.identificacao))
 
+  const itensRegional = perfil.perfil === 'regional'
+    ? itens.filter(i => i.gerente_regional === perfil.nome)
+    : itens
   const itensFiltrados = perfil.perfil === 'gestor'
     ? itens.filter(i => i.gerente_site === perfil.nome)
+    : perfil.perfil === 'regional'
+    ? (filtro === "Todos" ? itensRegional : itensRegional.filter(i => i.gerente_site === filtro))
     : filtro === "Todos" ? itens : itens.filter(i => i.gerente_site === filtro)
-  const gerentes = [...new Set(itens.map(i => i.gerente_site).filter(Boolean))].sort()
+  const gerentes = [...new Set(itensRegional.map(i => i.gerente_site).filter(Boolean))].sort()
   const gerentesVisiveis = filtro === "Todos" ? gerentes : [filtro]
   const totalBP = itensFiltrados.reduce((s, i) => s + getBP(i.chave_rfc, MESES[0].mesNum, MESES[0].ano), 0)
   const totalRFC = itensFiltrados.reduce((s, i) => s + getRFC(i.chave_rfc, mes1), 0)
   const delta = calcPct(totalRFC, totalBP)
 
   return (
-    <div style={{minHeight:"100vh",background:RTT.preto,fontFamily:F,color:RTT.branco}}>
+    <div style={{minHeight:"100vh",background:RTT.preto,fontFamily:F,color:RTT.branco,overflow:"clip"}}>
       {/* HEADER */}
       <header style={{background:RTT.cinzaEscuro,borderBottom:`1px solid ${RTT.cinzaBorda}`,padding:"0 28px",position:"sticky",top:0,zIndex:50}}>
-        <div style={{maxWidth:1800,margin:"0 auto",height:52,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{maxWidth:1800,margin:"0 auto",height:isMobile?"auto":52,display:"flex",flexDirection:isMobile?"column":"row",alignItems:isMobile?"flex-start":"center",justifyContent:"space-between",gap:isMobile?8:0,padding:isMobile?"10px 0":"0"}}>
           {/* LOGO + KPIs */}
-          <div style={{display:"flex",alignItems:"center",gap:24}}>
-            <div style={{display:"flex",alignItems:"center",gap:12,paddingRight:24,borderRight:`1px solid ${RTT.cinzaBorda}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:isMobile?12:24,flexWrap:isMobile?"wrap":"nowrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,paddingRight:isMobile?12:24,borderRight:isMobile?"none":`1px solid ${RTT.cinzaBorda}`}}>
               <span style={{fontSize:16,fontWeight:800,color:RTT.vermelho,letterSpacing:"-0.02em",fontFamily:F}}>RTT</span>
               <div>
                 <div style={{fontSize:12,fontWeight:600,color:RTT.branco,lineHeight:1.2,fontFamily:F}}>Forecast Semanal</div>
@@ -897,8 +1025,18 @@ export default function Forecast({ perfil, onLogout }) {
           <div style={{display:"flex",alignItems:"center",gap:16}}>
             <div style={{textAlign:"right"}}>
               <div style={{fontSize:12,fontWeight:600,color:RTT.branco,fontFamily:F}}>{perfil.nome}</div>
-              <div style={{fontSize:10,color:RTT.cinzaTexto,fontFamily:F}}>{perfil.perfil==='admin'?'Administrador':'Gerente de Site'}</div>
+              <div style={{fontSize:10,color:RTT.cinzaTexto,fontFamily:F}}>{perfil.perfil==='admin'?'Administrador':perfil.perfil==='regional'?'Gerente Regional':'Gerente de Site'}</div>
             </div>
+            {perfil.perfil === 'admin' && onNavigate && (
+              <button onClick={()=>onNavigate('painel')} style={{background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,color:RTT.cinzaClaro,padding:"5px 12px",borderRadius:6,fontSize:11,cursor:"pointer",fontFamily:F,transition:"border-color 0.15s"}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor=RTT.cinzaBorda2}
+                onMouseLeave={e=>e.currentTarget.style.borderColor=RTT.cinzaBorda}
+              >📊 Painel</button>
+            )}
+            <button onClick={()=>setModalTrocarSenha(true)} style={{background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,color:RTT.cinzaClaro,padding:"5px 12px",borderRadius:6,fontSize:11,cursor:"pointer",fontFamily:F,transition:"border-color 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor=RTT.cinzaBorda2}
+              onMouseLeave={e=>e.currentTarget.style.borderColor=RTT.cinzaBorda}
+            >🔑 Senha</button>
             <button onClick={onLogout} style={{background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,color:RTT.cinzaClaro,padding:"5px 12px",borderRadius:6,fontSize:11,cursor:"pointer",fontFamily:F,transition:"border-color 0.15s"}}
               onMouseEnter={e=>e.currentTarget.style.borderColor=RTT.cinzaBorda2}
               onMouseLeave={e=>e.currentTarget.style.borderColor=RTT.cinzaBorda}
@@ -926,14 +1064,14 @@ export default function Forecast({ perfil, onLogout }) {
       )}
       {janelaBloqueada && (
         <div style={{background:RTT.cinzaEscuro,borderBottom:`1px solid ${RTT.cinzaBorda}`,color:RTT.cinzaClaro,padding:"9px 28px",fontSize:11,textAlign:"center",fontFamily:F}}>
-          Preenchimento disponível de <strong style={{color:RTT.branco}}>quinta-feira às 09h</strong> até <strong style={{color:RTT.branco}}>sexta-feira às 12h</strong>
+          Preenchimento disponível de <strong style={{color:RTT.branco}}>segunda-feira</strong> até <strong style={{color:RTT.branco}}>sexta-feira às 12h</strong>
         </div>
       )}
 
-      <main style={{maxWidth:1800,margin:"0 auto",padding:"20px 28px"}}>
-        {/* FILTRO ADMIN */}
-        {perfil.perfil==='admin' && (
-          <div style={{display:"flex",gap:0,marginBottom:20,borderBottom:`1px solid ${RTT.cinzaBorda}`,alignItems:"center"}}>
+      <main style={{maxWidth:1800,margin:"0 auto",padding:isMobile?"16px 12px":"20px 28px"}}>
+        {/* FILTRO ADMIN/REGIONAL — sticky abaixo do header */}
+        {(perfil.perfil==='admin' || perfil.perfil==='regional') && (
+          <div style={{position:"sticky",top:52,zIndex:19,background:RTT.preto,display:"flex",gap:0,marginBottom:20,borderBottom:`1px solid ${RTT.cinzaBorda}`,alignItems:"center"}}>
             {["Todos",...gerentes].map(g => {
               const ativo = filtro === g
               const count = g === "Todos" ? itens.length : itens.filter(i => i.gerente_site === g).length
@@ -963,8 +1101,8 @@ export default function Forecast({ perfil, onLogout }) {
           <div style={{textAlign:"center",padding:"80px",color:RTT.cinzaTexto,fontSize:13,fontFamily:F}}>Carregando...</div>
         ) : (
           <>
-            {/* CABEÇALHO DAS COLUNAS — fixo ao rolar */}
-            <div style={{position:"sticky",top:52,zIndex:20,background:RTT.preto,paddingTop:4,paddingBottom:2}}>
+            {/* CABEÇALHO DAS COLUNAS — fixo ao rolar, só desktop */}
+            {!isMobile && <div style={{position:"sticky",top:(perfil.perfil==='admin'||perfil.perfil==='regional')?89:52,zIndex:18,background:RTT.preto,paddingTop:4,paddingBottom:2}}>
               <div style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 64px",gap:6}}>
                 <div style={{fontSize:12,fontWeight:500,color:RTT.cinzaTexto,fontFamily:F,alignSelf:"flex-end",paddingBottom:6}}>Projeto</div>
                 {MESES.map(m=>(
@@ -981,7 +1119,7 @@ export default function Forecast({ perfil, onLogout }) {
                 ))}
                 <div/>
               </div>
-            </div>
+            </div>}
 
             {/* LINHAS POR GERENTE */}
             {gerentesVisiveis.map(gerente => {
@@ -996,7 +1134,7 @@ export default function Forecast({ perfil, onLogout }) {
                       <span style={{fontSize:11,fontWeight:600,color:RTT.cinzaClaro,fontFamily:F}}>{gerente}</span>
                       <span style={{fontSize:10,color:RTT.cinzaTexto,fontFamily:F}}>{projs.length} projeto{projs.length!==1?"s":""}</span>
                     </div>
-                    {perfil.perfil==='admin' && (
+                    {(perfil.perfil==='admin' || perfil.perfil==='regional') && (
                       <span style={{fontSize:10,fontWeight:600,fontFamily:F,padding:"2px 8px",borderRadius:20,
                         background:gerEnviou?"rgba(16,185,129,0.1)":"rgba(245,158,11,0.1)",
                         color:gerEnviou?RTT.verde:RTT.amarelo,
@@ -1010,119 +1148,242 @@ export default function Forecast({ perfil, onLogout }) {
                   <div style={{display:"flex",flexDirection:"column",gap:2}}>
                   {projs.map(proj => {
                     const gs = GRUPO_CORES[proj.grupo] || {bg:"rgba(100,100,100,0.08)",text:"#71717a",border:"rgba(100,100,100,0.15)"}
-                    return (
-                      <div key={proj.chave_rfc} style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 64px",gap:6,alignItems:"center",padding:"8px 10px",borderRadius:6,background:RTT.cinzaEscuro,border:`1px solid ${RTT.cinzaBorda}`}}>
-                        {/* NOME DO PROJETO */}
-                        <div style={{minWidth:0,display:"flex",flexDirection:"column",gap:3}}>
-                          <div style={{fontSize:12,fontWeight:500,color:RTT.branco,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontFamily:F}}>{proj.identificacao}</div>
-                          {proj.grupo && <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,fontWeight:500,background:gs.bg,color:gs.text,border:`1px solid ${gs.border}`,alignSelf:"flex-start",fontFamily:F}}>{proj.grupo}</span>}
+
+                    if (isMobile) {
+                      // ── CARD MOBILE ──────────────────────────────────
+                      return (
+                        <div key={proj.chave_rfc} style={{background:RTT.cinzaEscuro,border:`1px solid ${RTT.cinzaBorda}`,borderRadius:8,marginBottom:8,overflow:'hidden'}}>
+                          {/* Cabeçalho do card */}
+                          <div style={{padding:"10px 14px",borderBottom:`1px solid ${RTT.cinzaBorda}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                            <div style={{minWidth:0,flex:1,marginRight:8}}>
+                              <div style={{fontSize:13,fontWeight:600,color:RTT.branco,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',fontFamily:F}}>{proj.identificacao}</div>
+                              {proj.grupo && <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,fontWeight:500,background:gs.bg,color:gs.text,border:`1px solid ${gs.border}`,display:'inline-block',marginTop:3,fontFamily:F}}>{proj.grupo}</span>}
+                            </div>
+                            <div style={{display:'flex',gap:6,flexShrink:0}}>
+                              {(perfil.perfil==='gestor' || perfil.perfil==='admin' || perfil.perfil==='regional') && (
+                                <button
+                                  onClick={()=>replicarRFC(proj)}
+                                  title="Replicar forecast da semana anterior"
+                                  style={{width:30,height:30,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,color:RTT.cinzaTexto,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}
+                                >↺</button>
+                              )}
+                              <button
+                                onClick={()=>setPainel(proj)}
+                                title="Painel anual"
+                                style={{width:30,height:30,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,color:RTT.cinzaTexto,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}
+                              >›</button>
+                            </div>
+                          </div>
+
+                          {/* Seção por mês */}
+                          {MESES.map((m, mIdx) => {
+                            const bp     = getBP(proj.chave_rfc, m.mesNum, m.ano)
+                            const rfc    = getRFC(proj.chave_rfc, m.label)
+                            const valAtual = getVal(proj.chave_rfc, m.key)
+                            const obsKey = proj.chave_rfc + '_' + m.key
+                            const obsVal = getObs(proj.chave_rfc, m.key)
+                            const variacaoAlta = temVariacao(valAtual, rfc)
+                            const obsObrig = variacaoAlta && !obsVal?.trim()
+                            const isLast = mIdx === MESES.length - 1
+                            return (
+                              <div key={m.key} style={{padding:"10px 14px",borderBottom:isLast?'none':`1px solid ${RTT.cinzaBorda}`}}>
+                                {/* Label do mês */}
+                                <div style={{fontSize:11,fontWeight:700,color:RTT.cinzaClaro,marginBottom:6,fontFamily:F,textTransform:'uppercase',letterSpacing:'0.04em'}}>{m.label} {m.ano}</div>
+                                {/* BP · RFC · Delta */}
+                                <div style={{display:'flex',gap:14,fontSize:12,marginBottom:8,flexWrap:'wrap'}}>
+                                  <span style={{fontFamily:F}}><span style={{color:RTT.amarelo,fontWeight:600}}>BP</span> <span style={{color:RTT.brancoSuave}}>{fmt(bp)}</span></span>
+                                  <span style={{fontFamily:F}}><span style={{color:RTT.cinzaTexto}}>RFC</span> <span style={{color:RTT.brancoSuave}}>{fmt(rfc)}</span></span>
+                                  <Delta val={rfc} refVal={bp}/>
+                                </div>
+                                {/* Input Forecast + botões */}
+                                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    placeholder="—"
+                                    value={formatInputBRL(valAtual)}
+                                    onChange={e => {
+                                      const digits = e.target.value.replace(/[^\d,]/g, '')
+                                      const parts = digits.split(',')
+                                      const raw = parts.length > 1 ? `${parts[0]}.${parts[1].slice(0,2)}` : parts[0]
+                                      setValor(proj.chave_rfc, m.key, raw)
+                                      if (temVariacao(parseFloat(raw), rfc)) setObsAbertas(prev => { const n = new Set(prev); n.add(obsKey); return n })
+                                    }}
+                                    style={{flex:1,background:'transparent',border:'none',borderBottom:`1px solid ${RTT.cinzaBorda2}`,padding:"6px 4px",color:RTT.branco,fontSize:15,outline:'none',textAlign:'right',fontFamily:F}}
+                                    onFocus={e=>e.target.style.borderBottomColor=RTT.vermelho}
+                                    onBlur={e=>e.target.style.borderBottomColor=RTT.cinzaBorda2}
+                                  />
+                                  <button
+                                    onClick={()=>toggleObs(obsKey)}
+                                    title={obsObrig?"Comentário obrigatório":"Observação"}
+                                    style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:16,padding:"4px",lineHeight:1,fontWeight:obsObrig?700:400}}
+                                  >✎</button>
+                                  {m.key==='mes1' && isJanelaFechamento(perfil.perfil) && (
+                                    <button
+                                      onClick={()=>{ setModalComprovacao(proj); setUploadArquivo(null); setErroArquivo(null) }}
+                                      title="Enviar comprovação de receita"
+                                      style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:16,padding:"4px",lineHeight:1}}
+                                    >📎</button>
+                                  )}
+                                </div>
+                                {/* Obs textarea */}
+                                {(obsAbertas.has(obsKey) || obsVal || obsObrig) && (
+                                  <>
+                                    {obsObrig && <div style={{fontSize:10,color:RTT.amarelo,fontFamily:F,marginTop:4}}>⚠ comentário obrigatório</div>}
+                                    <textarea
+                                      value={obsVal}
+                                      placeholder="Explique a variação..."
+                                      onChange={e=>setValor(proj.chave_rfc, m.key+'_obs', e.target.value)}
+                                      rows={2}
+                                      style={{width:'100%',marginTop:6,background:RTT.cinzaMedio,border:`1px solid ${obsObrig?RTT.amarelo:RTT.cinzaBorda}`,borderRadius:4,padding:"6px 8px",color:RTT.branco,fontSize:13,outline:'none',resize:'none',fontFamily:F,boxSizing:'border-box'}}
+                                      onFocus={e=>e.target.style.borderColor=RTT.vermelho}
+                                      onBlur={e=>e.target.style.borderColor=obsObrig?RTT.amarelo:RTT.cinzaBorda}
+                                    />
+                                  </>
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
+                      )
+                    }
 
-                        {/* CÉLULAS DE MÊS */}
-                        {MESES.map(m => {
-                          const bp  = getBP(proj.chave_rfc, m.mesNum, m.ano)
-                          const rfc = getRFC(proj.chave_rfc, m.label)
-                          const obsKey = proj.chave_rfc + '_' + m.key
-                          const obsAberta = obsAbertas.has(obsKey)
-                          const obsVal = getObs(proj.chave_rfc, m.key)
+                    // ── ROW DESKTOP ──────────────────────────────────
+                    const anyObsOpen = MESES.some(m => {
+                      const obsKey = proj.chave_rfc + '_' + m.key
+                      const rfc = getRFC(proj.chave_rfc, m.label)
+                      return obsAbertas.has(obsKey) || getObs(proj.chave_rfc, m.key) || temVariacao(getVal(proj.chave_rfc, m.key), rfc)
+                    })
+                    return (
+                      <div key={proj.chave_rfc}>
+                        {/* LINHA PRINCIPAL */}
+                        <div style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 64px",gap:6,alignItems:"center",padding:"8px 10px",borderRadius:anyObsOpen?"6px 6px 0 0":6,background:RTT.cinzaEscuro,border:`1px solid ${RTT.cinzaBorda}`,borderBottom:anyObsOpen?`1px solid ${RTT.cinzaMedio}`:`1px solid ${RTT.cinzaBorda}`}}>
+                          {/* NOME DO PROJETO */}
+                          <div style={{minWidth:0,display:"flex",flexDirection:"column",gap:3}}>
+                            <div style={{fontSize:12,fontWeight:500,color:RTT.branco,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontFamily:F}}>{proj.identificacao}</div>
+                            {proj.grupo && <span style={{fontSize:10,padding:"1px 6px",borderRadius:4,fontWeight:500,background:gs.bg,color:gs.text,border:`1px solid ${gs.border}`,alignSelf:"flex-start",fontFamily:F}}>{proj.grupo}</span>}
+                          </div>
 
-                          return (
-                            <div key={m.key} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,alignItems:"center"}}>
-                              {/* BP */}
-                              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:28}}>
-                                <div style={{fontSize:12,fontWeight:600,color:RTT.amarelo,fontFamily:F}}>{fmt(bp)}</div>
-                              </div>
+                          {/* CÉLULAS DE MÊS */}
+                          {MESES.map(m => {
+                            const bp  = getBP(proj.chave_rfc, m.mesNum, m.ano)
+                            const rfc = getRFC(proj.chave_rfc, m.label)
+                            const obsKey = proj.chave_rfc + '_' + m.key
+                            const obsVal = getObs(proj.chave_rfc, m.key)
+                            const valAtual = getVal(proj.chave_rfc, m.key)
+                            const variacaoAlta = temVariacao(valAtual, rfc)
+                            const obsObrig = variacaoAlta && !obsVal?.trim()
 
-                              {/* RFC s-1 */}
-                              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:28,gap:1}}>
-                                <div style={{fontSize:12,fontWeight:500,color:RTT.brancoSuave,fontFamily:F}}>{fmt(rfc)}</div>
-                                <Delta val={rfc} refVal={bp}/>
-                              </div>
+                            return (
+                              <div key={m.key} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4,alignItems:"center"}}>
+                                {/* BP */}
+                                <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:28}}>
+                                  <div style={{fontSize:12,fontWeight:600,color:RTT.amarelo,fontFamily:F}}>{fmt(bp)}</div>
+                                </div>
 
-                              {/* FORECAST */}
-                              {(() => {
-                                const valAtual = getVal(proj.chave_rfc, m.key)
-                                const variacaoAlta = temVariacao(valAtual, rfc)
-                                const obsObrig = variacaoAlta && !obsVal?.trim()
-                                return (
-                                <div style={{background:"rgba(227,30,36,0.04)",borderRadius:5,padding:"2px 4px",minHeight:36,display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"stretch"}}>
-                                  <div style={{display:"flex",justifyContent:"center"}}>
+                                {/* RFC s-1 */}
+                                <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:28,gap:1}}>
+                                  <div style={{fontSize:12,fontWeight:500,color:RTT.brancoSuave,fontFamily:F}}>{fmt(rfc)}</div>
+                                  <Delta val={rfc} refVal={bp}/>
+                                </div>
+
+                                {/* FORECAST — input + botões inline, sem textarea */}
+                                <div style={{background:"rgba(227,30,36,0.04)",borderRadius:5,padding:"3px 4px",display:"flex",flexDirection:"column",gap:2}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:2}}>
                                     <input
-                                      type="number"
+                                      type="text"
+                                      inputMode="numeric"
                                       placeholder="—"
-                                      value={valAtual}
+                                      value={formatInputBRL(valAtual)}
                                       onChange={e => {
-                                        const v = e.target.value
-                                        setValor(proj.chave_rfc, m.key, v)
-                                        // Auto-abre obs se variação > 5% em relação ao RFC s-1
-                                        if (temVariacao(v, rfc)) {
+                                        const digits = e.target.value.replace(/[^\d,]/g, '')
+                                        const parts = digits.split(',')
+                                        const raw = parts.length > 1 ? `${parts[0]}.${parts[1].slice(0,2)}` : parts[0]
+                                        setValor(proj.chave_rfc, m.key, raw)
+                                        if (temVariacao(parseFloat(raw), rfc)) {
                                           setObsAbertas(prev => { const n = new Set(prev); n.add(obsKey); return n })
                                         }
                                       }}
-                                      style={{width:"100%",background:"transparent",border:"none",borderBottom:`1px solid ${RTT.cinzaBorda2}`,borderRadius:0,padding:"2px 4px",color:RTT.branco,fontSize:11,outline:"none",textAlign:"center",boxSizing:"border-box",fontFamily:F}}
+                                      style={{flex:1,minWidth:0,background:"transparent",border:"none",borderBottom:`1px solid ${RTT.cinzaBorda2}`,borderRadius:0,padding:"2px 2px",color:RTT.branco,fontSize:11,outline:"none",textAlign:"center",fontFamily:F}}
                                       onFocus={e=>e.target.style.borderBottomColor=RTT.vermelho}
                                       onBlur={e=>e.target.style.borderBottomColor=RTT.cinzaBorda2}
                                     />
-                                  </div>
-                                  <div style={{display:"flex",justifyContent:"center",gap:6,marginTop:3}}>
                                     <button
                                       onClick={()=>toggleObs(obsKey)}
-                                      title={obsObrig ? "Comentário obrigatório (variação >5%)" : "Observação"}
-                                      style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:13,padding:"1px 3px",lineHeight:1,fontWeight:obsObrig?700:400}}
+                                      title={obsObrig?"Comentário obrigatório (variação >5%)":"Observação"}
+                                      style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:12,padding:"0 1px",lineHeight:1,fontWeight:obsObrig?700:400,flexShrink:0}}
                                     >✎</button>
-                                    {m.key === 'mes1' && isJanelaFechamento(perfil.perfil) && (
+                                    {m.key==='mes1' && isJanelaFechamento(perfil.perfil) && (
                                       <button
                                         onClick={()=>{ setModalComprovacao(proj); setUploadArquivo(null); setErroArquivo(null) }}
                                         title="Enviar comprovação de receita"
-                                        style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:13,padding:"1px 3px",lineHeight:1}}
+                                        style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:12,padding:"0 1px",lineHeight:1,flexShrink:0}}
                                         onMouseEnter={e=>e.currentTarget.style.color=RTT.vermelho}
                                         onMouseLeave={e=>e.currentTarget.style.color=RTT.cinzaTexto}
                                       >📎</button>
                                     )}
                                   </div>
-                                  {(obsAberta || obsVal || variacaoAlta) && (
-                                    <>
-                                      {obsObrig && (
-                                        <div style={{fontSize:9,color:RTT.amarelo,fontFamily:F,marginTop:2,paddingLeft:2}}>
-                                          ⚠ comentário obrigatório
-                                        </div>
-                                      )}
-                                      <textarea
-                                        value={obsVal}
-                                        placeholder="Explique a variação..."
-                                        onChange={e=>setValor(proj.chave_rfc, m.key+'_obs', e.target.value)}
-                                        rows={2}
-                                        style={{width:"100%",marginTop:2,background:RTT.cinzaMedio,border:`1px solid ${obsObrig?RTT.amarelo:RTT.cinzaBorda}`,borderRadius:4,padding:"4px 6px",color:RTT.branco,fontSize:11,outline:"none",resize:"none",boxSizing:"border-box",fontFamily:F}}
-                                        onFocus={e=>e.target.style.borderColor=RTT.vermelho}
-                                        onBlur={e=>e.target.style.borderColor=obsObrig?RTT.amarelo:RTT.cinzaBorda}
-                                      />
-                                    </>
+                                  {(parseFloat(valAtual)||0) > 0 && rfc > 0 && (
+                                    <div style={{display:"flex",justifyContent:"center"}}>
+                                      <Delta val={parseFloat(valAtual)} refVal={rfc}/>
+                                    </div>
                                   )}
                                 </div>
-                                )
-                              })()}
-                            </div>
-                          )
-                        })}
+                              </div>
+                            )
+                          })}
 
-                        {/* BOTÕES: REPLICAR + PAINEL ANUAL */}
-                        <div style={{display:"flex",flexDirection:"column",gap:4,paddingTop:2}}>
-                          {(perfil.perfil==='gestor' || perfil.perfil==='admin') && (
+                          {/* BOTÕES: REPLICAR + PAINEL ANUAL */}
+                          <div style={{display:"flex",flexDirection:"column",gap:4,paddingTop:2}}>
+                            {(perfil.perfil==='gestor' || perfil.perfil==='admin' || perfil.perfil==='regional') && (
+                              <button
+                                onClick={()=>replicarRFC(proj)}
+                                title="Replicar forecast da semana anterior"
+                                style={{width:28,height:28,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,color:RTT.cinzaTexto,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}
+                                onMouseEnter={e=>{e.currentTarget.style.borderColor=RTT.amarelo;e.currentTarget.style.color=RTT.amarelo}}
+                                onMouseLeave={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda;e.currentTarget.style.color=RTT.cinzaTexto}}
+                              >↺</button>
+                            )}
                             <button
-                              onClick={()=>replicarRFC(proj)}
-                              title="Replicar forecast da semana anterior"
-                              style={{width:28,height:28,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,color:RTT.cinzaTexto,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}
-                              onMouseEnter={e=>{e.currentTarget.style.borderColor=RTT.amarelo;e.currentTarget.style.color=RTT.amarelo}}
+                              onClick={()=>setPainel(proj)}
+                              style={{width:28,height:28,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,color:RTT.cinzaTexto,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}
+                              onMouseEnter={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda2;e.currentTarget.style.color=RTT.branco}}
                               onMouseLeave={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda;e.currentTarget.style.color=RTT.cinzaTexto}}
-                            >↺</button>
-                          )}
-                          <button
-                            onClick={()=>setPainel(proj)}
-                            style={{width:28,height:28,background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,borderRadius:6,color:RTT.cinzaTexto,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F}}
-                            onMouseEnter={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda2;e.currentTarget.style.color=RTT.branco}}
-                            onMouseLeave={e=>{e.currentTarget.style.borderColor=RTT.cinzaBorda;e.currentTarget.style.color=RTT.cinzaTexto}}
-                          >›</button>
+                            >›</button>
+                          </div>
                         </div>
+
+                        {/* FAIXA DE OBSERVAÇÕES — abaixo da linha, alinhada às colunas de mês */}
+                        {anyObsOpen && (
+                          <div style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 64px",gap:6,background:RTT.cinzaEscuro,border:`1px solid ${RTT.cinzaBorda}`,borderTop:"none",borderRadius:"0 0 6px 6px",padding:"6px 10px 8px"}}>
+                            <div/>
+                            {MESES.map(m => {
+                              const obsKey = proj.chave_rfc + '_' + m.key
+                              const obsVal = getObs(proj.chave_rfc, m.key)
+                              const rfc = getRFC(proj.chave_rfc, m.label)
+                              const valAtual = getVal(proj.chave_rfc, m.key)
+                              const variacaoAlta = temVariacao(valAtual, rfc)
+                              const obsObrig = variacaoAlta && !obsVal?.trim()
+                              const show = obsAbertas.has(obsKey) || obsVal || variacaoAlta
+                              if (!show) return <div key={m.key}/>
+                              return (
+                                <div key={m.key}>
+                                  {obsObrig && <div style={{fontSize:9,color:RTT.amarelo,fontFamily:F,marginBottom:2}}>⚠ comentário obrigatório</div>}
+                                  <textarea
+                                    value={obsVal}
+                                    placeholder="Explique a variação..."
+                                    onChange={e=>setValor(proj.chave_rfc, m.key+'_obs', e.target.value)}
+                                    rows={2}
+                                    style={{width:"100%",background:RTT.cinzaMedio,border:`1px solid ${obsObrig?RTT.amarelo:RTT.cinzaBorda}`,borderRadius:4,padding:"4px 6px",color:RTT.branco,fontSize:11,outline:"none",resize:"none",boxSizing:"border-box",fontFamily:F}}
+                                    onFocus={e=>e.target.style.borderColor=RTT.vermelho}
+                                    onBlur={e=>e.target.style.borderColor=obsObrig?RTT.amarelo:RTT.cinzaBorda}
+                                  />
+                                </div>
+                              )
+                            })}
+                            <div/>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -1131,8 +1392,40 @@ export default function Forecast({ perfil, onLogout }) {
               )
             })}
 
+            {/* TOTAIS POR MÊS */}
+            {!isMobile && (
+              <div style={{display:"grid",gridTemplateColumns:"260px 1fr 1fr 1fr 64px",gap:6,marginTop:10,paddingTop:10,borderTop:`2px solid ${RTT.cinzaBorda}`}}>
+                <div style={{fontSize:11,fontWeight:600,color:RTT.cinzaClaro,fontFamily:F,display:"flex",alignItems:"center",paddingLeft:4}}>
+                  Total · {itensFiltrados.length} projeto{itensFiltrados.length!==1?"s":""}
+                </div>
+                {MESES.map(m => {
+                  const bp  = itensFiltrados.reduce((s,i) => s + getBP(i.chave_rfc, m.mesNum, m.ano), 0)
+                  const rfc = itensFiltrados.reduce((s,i) => s + getRFC(i.chave_rfc, m.label), 0)
+                  const fc  = itensFiltrados.reduce((s,i) => s + (parseFloat(getVal(i.chave_rfc, m.key)) || 0), 0)
+                  return (
+                    <div key={m.key} style={{background:RTT.cinzaMedio,border:`1px solid ${RTT.cinzaBorda2}`,borderRadius:6,overflow:"hidden"}}>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr"}}>
+                        <div style={{padding:"7px 8px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                          <span style={{fontSize:12,color:RTT.amarelo,fontFamily:F,fontWeight:700}}>{bp ? fmt(bp) : "—"}</span>
+                        </div>
+                        <div style={{padding:"7px 8px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                          <span style={{fontSize:12,color:RTT.brancoSuave,fontFamily:F,fontWeight:700}}>{rfc ? fmt(rfc) : "—"}</span>
+                          <Delta val={rfc} refVal={bp}/>
+                        </div>
+                        <div style={{padding:"7px 8px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"rgba(227,30,36,0.07)"}}>
+                          <span style={{fontSize:12,color:RTT.vermelho,fontFamily:F,fontWeight:700}}>{fc ? fmt(fc) : "—"}</span>
+                          <Delta val={fc} refVal={rfc}/>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                <div/>
+              </div>
+            )}
+
             {/* RODAPÉ */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 0",marginTop:16,borderTop:`1px solid ${RTT.cinzaBorda}`}}>
+            <div style={{display:"flex",flexDirection:isMobile?"column":"row",alignItems:isMobile?"stretch":"center",justifyContent:"space-between",padding:"14px 0",marginTop:16,borderTop:`1px solid ${RTT.cinzaBorda}`,gap:isMobile?10:0}}>
               <div style={{display:"flex",flexDirection:"column",gap:3}}>
                 <div style={{fontSize:11,color:RTT.cinzaTexto,fontFamily:F}}>
                   {itensFiltrados.length} projetos · S{semana}/{anoAtual} · Prazo <strong style={{color:RTT.cinzaClaro,fontWeight:500}}>sexta {prazoDia}/{prazoMes} 12h</strong>
@@ -1144,14 +1437,19 @@ export default function Forecast({ perfil, onLogout }) {
                       : "Forecast desta semana ainda não enviado"}
                   </div>
                 )}
+                {perfil.perfil==='regional' && (
+                  <div style={{fontSize:11,fontWeight:600,fontFamily:F,color:gerentes.filter(g=>gerentesQueEnviaram.has(g)).length===gerentes.length&&gerentes.length>0?RTT.verde:RTT.amarelo}}>
+                    {gerentes.filter(g=>gerentesQueEnviaram.has(g)).length}/{gerentes.length} gestores enviaram
+                  </div>
+                )}
               </div>
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                {perfil.perfil==='admin' && !isJanelaAberta() && (
+              <div style={{display:"flex",flexDirection:isMobile?"column":"row",gap:8,alignItems:"stretch"}}>
+                {perfil.perfil==='admin' && (
                   <button
                     onClick={handleAtualizarRFC}
                     disabled={atualizandoRFC}
                     title="Re-exporta o RFC da semana atual para o SharePoint via Power Automate"
-                    style={{background:"transparent",border:`1px solid ${rfcAtualizado?RTT.verde:RTT.cinzaBorda}`,color:rfcAtualizado?RTT.verde:RTT.cinzaClaro,padding:"8px 16px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:F,opacity:atualizandoRFC?0.6:1}}
+                    style={{background:"transparent",border:`1px solid ${rfcAtualizado?RTT.verde:RTT.cinzaBorda}`,color:rfcAtualizado?RTT.verde:RTT.cinzaClaro,padding:"8px 16px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:F,opacity:atualizandoRFC?0.6:1,textAlign:"center"}}
                   >{atualizandoRFC?"Atualizando...":rfcAtualizado?"✓ RFC atualizado":"Atualizar RFC"}</button>
                 )}
                 <button
@@ -1167,7 +1465,8 @@ export default function Forecast({ perfil, onLogout }) {
         )}
       </main>
 
-      {painel && <PainelAnual proj={painel} mesAtualIdx={mesAtualIdx} forecastAnual={forecastAnual} onClose={()=>setPainel(null)} perfil={perfil} semana={semana}/>}
+      {modalTrocarSenha && <ModalTrocarSenha onClose={()=>setModalTrocarSenha(false)}/>}
+      {painel && <PainelAnual proj={painel} mesAtualIdx={mesAtualIdx} forecastAnual={forecastAnual} onClose={()=>setPainel(null)} perfil={perfil} semana={semana} isMobile={isMobile}/>}
       {modalComprovacao && (
         <ModalComprovacao
           proj={modalComprovacao}
@@ -1175,6 +1474,7 @@ export default function Forecast({ perfil, onLogout }) {
           enviando={enviandoArquivo} sucesso={sucessoArquivo} erro={erroArquivo}
           onEnviar={handleUploadComprovacao}
           onClose={()=>{ setModalComprovacao(null); setUploadArquivo(null); setErroArquivo(null) }}
+          isMobile={isMobile}
         />
       )}
     </div>
