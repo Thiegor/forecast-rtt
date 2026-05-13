@@ -1027,7 +1027,7 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
               <div style={{fontSize:12,fontWeight:600,color:RTT.branco,fontFamily:F}}>{perfil.nome}</div>
               <div style={{fontSize:10,color:RTT.cinzaTexto,fontFamily:F}}>{perfil.perfil==='admin'?'Administrador':perfil.perfil==='regional'?'Gerente Regional':'Gerente de Site'}</div>
             </div>
-            {perfil.perfil === 'admin' && onNavigate && (
+            {onNavigate && (
               <button onClick={()=>onNavigate('painel')} style={{background:"transparent",border:`1px solid ${RTT.cinzaBorda}`,color:RTT.cinzaClaro,padding:"5px 12px",borderRadius:6,fontSize:11,cursor:"pointer",fontFamily:F,transition:"border-color 0.15s"}}
                 onMouseEnter={e=>e.currentTarget.style.borderColor=RTT.cinzaBorda2}
                 onMouseLeave={e=>e.currentTarget.style.borderColor=RTT.cinzaBorda}

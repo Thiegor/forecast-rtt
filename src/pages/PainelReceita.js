@@ -141,7 +141,15 @@ export default function PainelReceita({ perfil, onLogout, onNavigate }) {
           .select('cod_projeto,identificacao,gerente_site'),
       ])
 
-      setDados(processar(fcData || [], bpData || [], projData || []))
+      // Filtrar FC pelo perfil do usuário
+      let fcFiltrado = fcData || []
+      if (perfil?.perfil === 'gestor') {
+        fcFiltrado = fcFiltrado.filter(r => r.gerente_site === perfil.nome)
+      } else if (perfil?.perfil === 'regional') {
+        fcFiltrado = fcFiltrado.filter(r => r.gerente_regional === perfil.nome)
+      }
+
+      setDados(processar(fcFiltrado, bpData || [], projData || [], perfil))
     } catch (e) {
       console.error(e)
     } finally {
@@ -149,17 +157,22 @@ export default function PainelReceita({ perfil, onLogout, onNavigate }) {
     }
   }
 
-  function processar(fcData, bpData, projData) {
-    // Lookup de projetos cadastrados: cod_projeto -> {identificacao, gerente_site}
+  function processar(fcData, bpData, projData, perfil) {
+    // Lookup de projetos cadastrados: cod_projeto -> {identificacao, gerente_site, gerente_regional}
     const projLookup = {}
     for (const p of projData) {
       projLookup[String(p.cod_projeto).trim()] = p
     }
 
-    // BP: chave_rfc -> {mesNum -> valor}  +  metadados do bp_anual
+    // Conjunto de chave_rfc visíveis (baseado no FC filtrado)
+    const chavesVisiveis = new Set(fcData.map(r => r.chave_rfc))
+
+    // BP: somente chaves que o usuário pode ver
     const bpMap  = {}  // chave_rfc -> {mes -> valor}
     const bpMeta = {}  // chave_rfc -> {cod_projeto, grupo}
     for (const r of bpData) {
+      // Para admin, inclui tudo; para gestor/regional, só chaves visíveis no FC
+      if (perfil?.perfil !== 'admin' && !chavesVisiveis.has(r.chave_rfc)) continue
       if (!bpMap[r.chave_rfc])  bpMap[r.chave_rfc]  = {}
       if (!bpMeta[r.chave_rfc]) bpMeta[r.chave_rfc] = { cod_projeto: String(r.cod_projeto || '').trim(), grupo: r.grupo || '' }
       bpMap[r.chave_rfc][r.mes] = parseFloat(r.valor_bp) || 0
@@ -332,16 +345,20 @@ export default function PainelReceita({ perfil, onLogout, onNavigate }) {
           </div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <button onClick={() => setModalUsuarios(true)}
-            style={{ background:'transparent', border:`1px solid ${RTT.cinzaBorda}`, color:RTT.cinzaClaro,
-              padding:'5px 12px', borderRadius:6, fontSize:11, cursor:'pointer', fontFamily:F }}
-            onMouseEnter={e => e.currentTarget.style.borderColor = RTT.cinzaBorda2}
-            onMouseLeave={e => e.currentTarget.style.borderColor = RTT.cinzaBorda}>
-            👥 Usuários
-          </button>
+          {perfil?.perfil === 'admin' && (
+            <button onClick={() => setModalUsuarios(true)}
+              style={{ background:'transparent', border:`1px solid ${RTT.cinzaBorda}`, color:RTT.cinzaClaro,
+                padding:'5px 12px', borderRadius:6, fontSize:11, cursor:'pointer', fontFamily:F }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = RTT.cinzaBorda2}
+              onMouseLeave={e => e.currentTarget.style.borderColor = RTT.cinzaBorda}>
+              👥 Usuários
+            </button>
+          )}
           <div style={{ textAlign:'right' }}>
             <div style={{ fontSize:12, fontWeight:600, color:RTT.branco }}>{perfil?.nome}</div>
-            <div style={{ fontSize:10, color:RTT.cinzaTexto }}>Administrador</div>
+            <div style={{ fontSize:10, color:RTT.cinzaTexto }}>
+              {perfil?.perfil === 'admin' ? 'Administrador' : perfil?.perfil === 'regional' ? 'Gerente Regional' : 'Gerente de Site'}
+            </div>
           </div>
           <button onClick={onLogout}
             style={{ background:'transparent', border:`1px solid ${RTT.cinzaBorda}`, color:RTT.cinzaClaro,

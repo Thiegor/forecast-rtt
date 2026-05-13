@@ -135,7 +135,7 @@ export default function App() {
   }
 
   if (estado === 'logado' && perfil) {
-    if (pagina === 'painel' && perfil.perfil === 'admin') {
+    if (pagina === 'painel' && ['admin', 'gestor', 'regional'].includes(perfil.perfil)) {
       return <PainelReceita perfil={perfil} onLogout={handleLogout} onNavigate={setPagina} />
     }
     return <Forecast perfil={perfil} onLogout={handleLogout} onNavigate={setPagina} />
