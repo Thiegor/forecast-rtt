@@ -1013,7 +1013,9 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
       }
     }
   })
-  const itens = Object.values(itensMap).sort((a, b) => a.identificacao.localeCompare(b.identificacao))
+  const itens = Object.values(itensMap)
+    .filter(i => i.grupo !== 'PIPE 2')
+    .sort((a, b) => a.identificacao.localeCompare(b.identificacao))
 
   const itensRegional = perfil.perfil === 'regional'
     ? itens.filter(i => i.gerente_regional === perfil.nome)
