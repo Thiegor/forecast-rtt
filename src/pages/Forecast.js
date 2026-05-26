@@ -545,6 +545,7 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
   const [forecastAnual, setForecastAnual] = useState([])
   const [atualizandoRFC, setAtualizandoRFC] = useState(false)
   const [rfcAtualizado, setRfcAtualizado] = useState(false)
+  const [comprovacoes, setComprovacoes] = useState([])
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
 
   useEffect(() => {
@@ -558,6 +559,13 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
   const anoAtual = now.getFullYear()
   const mesAtualIdx = now.getMonth()
   const janelaBloqueada = perfil.perfil !== 'admin' && !isJanelaAberta()
+
+  // Mês/ano de referência para comprovações (lógica de fechamento)
+  const diaHj = now.getDate()
+  const ultimoDiaHj = new Date(anoAtual, mesAtualIdx + 1, 0).getDate()
+  const mesComprovacaoIdx = diaHj === ultimoDiaHj ? mesAtualIdx : (mesAtualIdx - 1 + 12) % 12
+  const mesComprovacao = MESES_LONGOS[mesComprovacaoIdx]
+  const anoComprovacao = diaHj <= 5 && mesAtualIdx === 0 ? anoAtual - 1 : anoAtual
 
   // Data da sexta-feira desta semana (prazo)
   const sexta = new Date(now)
@@ -600,7 +608,7 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
         }
 
         // Todas as queries em paralelo com timeout individual
-        const [resCadastro, resFc, resUltSemana, resBp, resFcAnual] = await Promise.allSettled([
+        const [resCadastro, resFc, resUltSemana, resBp, resFcAnual, resCompr] = await Promise.allSettled([
           withTimeout(supabase.from('projetos').select('*').order('identificacao')),
           withTimeout(supabase.from('forecast_semanal').select('*')
             .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)),
@@ -610,6 +618,8 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
             .order('semana_coleta', { ascending: false }).limit(1).single()),
           withTimeout(supabase.from('bp_anual').select('*').eq('ano', anoAtual).in('mes', mesesNums)),
           withTimeout(supabase.from('forecast_semanal').select('*').eq('ano_referencia', anoAtual)),
+          withTimeout(supabase.from('comprovacoes').select('*')
+            .eq('ano_referencia', anoComprovacao).eq('mes_referencia', mesComprovacao)),
         ])
 
         setProjetosCadastro(resCadastro.value?.data || [])
@@ -623,6 +633,7 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
 
         setBpAnual(resBp.value?.data || [])
         setForecastAnual(resFcAnual.value?.data || [])
+        setComprovacoes(resCompr.value?.data || [])
       } catch (e) {
         console.error('Erro ao carregar dados:', e)
       } finally {
@@ -844,43 +855,58 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
     setEnviandoArquivo(true)
     setErroArquivo(null)
     try {
-      const hoje = new Date()
-      const dia = hoje.getDate()
-      const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0).getDate()
-      const mesIdx = dia === ultimoDia ? hoje.getMonth() : (hoje.getMonth() - 1 + 12) % 12
-      const anoRef = dia <= 5 && hoje.getMonth() === 0 ? hoje.getFullYear() - 1 : hoje.getFullYear()
-      const mes_label = MESES_LONGOS[mesIdx]
-      const mes_num   = String(mesIdx + 1).padStart(2, '0')
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload  = e => resolve(e.target.result.split(',')[1])
-        reader.onerror = reject
-        reader.readAsDataURL(uploadArquivo)
-      })
-      if (!WEBHOOK_COMPROVACAO_URL) throw new Error('Webhook não configurado. Preencha WEBHOOK_COMPROVACAO_URL.')
-      const resp = await fetch(WEBHOOK_COMPROVACAO_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gestor: perfil.nome,
-          cod_projeto: String(modalComprovacao.cod_projeto || ''),
-          identificacao: modalComprovacao.identificacao || '',
-          mes_num, mes_label,
-          ano: String(anoRef),
-          filename: uploadArquivo.name,
-          mimetype: uploadArquivo.type,
-          content_base64: base64,
+      const ext = uploadArquivo.name.split('.').pop().toLowerCase()
+      const nomeSeguro = (modalComprovacao.identificacao || 'projeto').replace(/[^a-zA-Z0-9\-]/g, '_').slice(0, 60)
+      const path = `${anoComprovacao}/${mesComprovacao}/${nomeSeguro}/${Date.now()}.${ext}`
+
+      // 1. Upload direto ao Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('comprovacoes')
+        .upload(path, uploadArquivo, { upsert: true })
+      if (uploadError) throw new Error('Erro no Storage: ' + uploadError.message)
+
+      // 2. Enviar ao Power Automate → SharePoint (apenas se webhook configurado)
+      if (WEBHOOK_COMPROVACAO_URL) {
+        const mes_num = String(mesComprovacaoIdx + 1).padStart(2, '0')
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload  = e => resolve(e.target.result.split(',')[1])
+          reader.onerror = reject
+          reader.readAsDataURL(uploadArquivo)
         })
-      })
-      if (!resp.ok) throw new Error('Erro no SharePoint (' + resp.status + ')')
-      await supabase.from('comprovacoes').insert({
+        const resp = await fetch(WEBHOOK_COMPROVACAO_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            gestor: perfil.nome,
+            cod_projeto: String(modalComprovacao.cod_projeto || ''),
+            identificacao: modalComprovacao.identificacao || '',
+            mes_num, mes_label: mesComprovacao,
+            ano: String(anoComprovacao),
+            filename: uploadArquivo.name,
+            mimetype: uploadArquivo.type,
+            content_base64: base64,
+          })
+        })
+        if (!resp.ok) console.warn('Power Automate retornou ' + resp.status + ' — arquivo salvo no Storage')
+      }
+
+      // 3. Registrar na tabela comprovacoes
+      const { data: novaCompr } = await supabase.from('comprovacoes').insert({
         gerente_site:   perfil.nome,
         cod_projeto:    String(modalComprovacao.cod_projeto || ''),
         identificacao:  modalComprovacao.identificacao,
-        mes_referencia: mes_label,
-        ano_referencia: anoRef,
+        mes_referencia: mesComprovacao,
+        ano_referencia: anoComprovacao,
         arquivo_nome:   uploadArquivo.name,
-      })
+        storage_path:   path,
+        file_size:      uploadArquivo.size,
+        file_type:      uploadArquivo.type,
+      }).select().single()
+
+      // 4. Atualizar estado local (ícone muda sem recarregar)
+      if (novaCompr) setComprovacoes(prev => [...prev, novaCompr])
+
       setSucessoArquivo(true)
       setTimeout(() => {
         setSucessoArquivo(false)
@@ -891,6 +917,18 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
       setErroArquivo('Erro: ' + e.message)
     } finally {
       setEnviandoArquivo(false)
+    }
+  }
+
+  async function handleVerComprovacao(compr) {
+    try {
+      const { data, error } = await supabase.storage
+        .from('comprovacoes')
+        .createSignedUrl(compr.storage_path, 120)
+      if (error) throw error
+      if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+    } catch(e) {
+      alert('Erro ao abrir arquivo: ' + e.message)
     }
   }
 
@@ -1218,13 +1256,22 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
                                     title={obsObrig?"Comentário obrigatório":"Observação"}
                                     style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:16,padding:"4px",lineHeight:1,fontWeight:obsObrig?700:400}}
                                   >✎</button>
-                                  {m.key==='mes1' && isJanelaFechamento(perfil.perfil) && (
-                                    <button
-                                      onClick={()=>{ setModalComprovacao(proj); setUploadArquivo(null); setErroArquivo(null) }}
-                                      title="Enviar comprovação de receita"
-                                      style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:16,padding:"4px",lineHeight:1}}
-                                    >📎</button>
-                                  )}
+                                  {m.key==='mes1' && isJanelaFechamento(perfil.perfil) && (() => {
+                                    const compr = comprovacoes.find(c => c.cod_projeto === String(proj.cod_projeto || '') && c.mes_referencia === mesComprovacao)
+                                    return compr ? (
+                                      <button
+                                        onClick={() => handleVerComprovacao(compr)}
+                                        title={`Ver comprovação: ${compr.arquivo_nome}`}
+                                        style={{background:"none",border:"none",color:RTT.verde,cursor:"pointer",fontSize:16,padding:"4px",lineHeight:1}}
+                                      >📄</button>
+                                    ) : (
+                                      <button
+                                        onClick={()=>{ setModalComprovacao(proj); setUploadArquivo(null); setErroArquivo(null) }}
+                                        title="Enviar comprovação de receita"
+                                        style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:16,padding:"4px",lineHeight:1}}
+                                      >📎</button>
+                                    )
+                                  })()}
                                 </div>
                                 {/* Obs textarea */}
                                 {(obsAbertas.has(obsKey) || obsVal || obsObrig) && (
@@ -1313,15 +1360,24 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
                                       title={obsObrig?"Comentário obrigatório (variação >5%)":"Observação"}
                                       style={{background:"none",border:"none",color:obsObrig?RTT.amarelo:obsVal?RTT.vermelho:RTT.cinzaTexto,cursor:"pointer",fontSize:12,padding:"0 1px",lineHeight:1,fontWeight:obsObrig?700:400,flexShrink:0}}
                                     >✎</button>
-                                    {m.key==='mes1' && isJanelaFechamento(perfil.perfil) && (
-                                      <button
-                                        onClick={()=>{ setModalComprovacao(proj); setUploadArquivo(null); setErroArquivo(null) }}
-                                        title="Enviar comprovação de receita"
-                                        style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:12,padding:"0 1px",lineHeight:1,flexShrink:0}}
-                                        onMouseEnter={e=>e.currentTarget.style.color=RTT.vermelho}
-                                        onMouseLeave={e=>e.currentTarget.style.color=RTT.cinzaTexto}
-                                      >📎</button>
-                                    )}
+                                    {m.key==='mes1' && isJanelaFechamento(perfil.perfil) && (() => {
+                                      const compr = comprovacoes.find(c => c.cod_projeto === String(proj.cod_projeto || '') && c.mes_referencia === mesComprovacao)
+                                      return compr ? (
+                                        <button
+                                          onClick={() => handleVerComprovacao(compr)}
+                                          title={`Ver comprovação: ${compr.arquivo_nome}`}
+                                          style={{background:"none",border:"none",color:RTT.verde,cursor:"pointer",fontSize:12,padding:"0 1px",lineHeight:1,flexShrink:0}}
+                                        >📄</button>
+                                      ) : (
+                                        <button
+                                          onClick={()=>{ setModalComprovacao(proj); setUploadArquivo(null); setErroArquivo(null) }}
+                                          title="Enviar comprovação de receita"
+                                          style={{background:"none",border:"none",color:RTT.cinzaTexto,cursor:"pointer",fontSize:12,padding:"0 1px",lineHeight:1,flexShrink:0}}
+                                          onMouseEnter={e=>e.currentTarget.style.color=RTT.vermelho}
+                                          onMouseLeave={e=>e.currentTarget.style.color=RTT.cinzaTexto}
+                                        >📎</button>
+                                      )
+                                    })()}
                                   </div>
                                   {(parseFloat(valAtual)||0) > 0 && rfc > 0 && (
                                     <div style={{display:"flex",justifyContent:"center"}}>
