@@ -617,7 +617,7 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
             .lt('semana_coleta', semana)
             .order('semana_coleta', { ascending: false }).limit(1).single()),
           withTimeout(supabase.from('bp_anual').select('*').eq('ano', anoAtual).in('mes', mesesNums)),
-          withTimeout(supabase.from('forecast_semanal').select('*').eq('ano_referencia', anoAtual)),
+          withTimeout(supabase.from('forecast_semanal').select('*').eq('ano_referencia', anoAtual).limit(10000)),
           withTimeout(supabase.from('comprovacoes').select('*')
             .eq('ano_referencia', anoComprovacao).eq('mes_referencia', mesComprovacao)),
         ])
