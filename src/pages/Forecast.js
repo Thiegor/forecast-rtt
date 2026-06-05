@@ -686,17 +686,12 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
     return fc?.observacoes || ''
   }
 
-  // RFC s-1: registro mais recente de semanas ANTERIORES à semana atual.
-  // Garante que dados do envio corrente (semana_coleta = semana) fiquem
-  // apenas no Forecast e não contaminem o RFC s-1.
+  // RFC s-1: valor da semana imediatamente anterior à semana atual.
+  // Usa forecastSemanaAnterior que já foi buscado especificamente para semanaRef
+  // (semana mais recente < semana atual), evitando problemas com limite de 1000 rows do PostgREST.
   function getRFC(chave, mes) {
-    const registros = forecastAnual.filter(f =>
-      f.chave_rfc === chave &&
-      f.mes_referencia === mes &&
-      f.semana_coleta < semana   // exclui semana atual
-    )
-    if (!registros.length) return 0
-    return registros.reduce((a, b) => b.semana_coleta > a.semana_coleta ? b : a).receita_prevista || 0
+    const f = forecastSemanaAnterior.find(f => f.chave_rfc === chave && f.mes_referencia === mes)
+    return f?.receita_prevista || 0
   }
 
   // BP: lê de bp_anual por chave_rfc + mes (número 1-12) + ano
