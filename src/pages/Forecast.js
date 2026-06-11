@@ -995,7 +995,8 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
   forecastAnual.forEach(f => {
     if (!itensMap[f.chave_rfc]) {
       // Apenas se existir projeto Vigente com código numérico correspondente
-      const proj = projetosCadastro.find(p => p.cod_projeto === f.cod_projeto)
+      // (forecast_semanal.cod_projeto é integer, projetos.cod_projeto é text — compara como string)
+      const proj = projetosCadastro.find(p => String(p.cod_projeto) === String(f.cod_projeto))
       if (!proj || !f.cod_projeto || !/^\d+$/.test(String(f.cod_projeto))) return
       itensMap[f.chave_rfc] = {
         chave_rfc: f.chave_rfc,
