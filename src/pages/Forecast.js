@@ -607,6 +607,24 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
           return Promise.race([promise, new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms))])
         }
 
+        // Busca todas as linhas de forecast_semanal do ano, paginando de 1000 em 1000
+        // (o PostgREST limita a 1000 linhas por requisição, mesmo com .limit(10000))
+        async function fetchForecastAnualPaginado() {
+          let all = []
+          let from = 0
+          const pageSize = 1000
+          for (;;) {
+            const { data, error } = await supabase.from('forecast_semanal').select('*')
+              .eq('ano_referencia', anoAtual)
+              .range(from, from + pageSize - 1)
+            if (error || !data || data.length === 0) break
+            all = all.concat(data)
+            if (data.length < pageSize) break
+            from += pageSize
+          }
+          return all
+        }
+
         // Todas as queries em paralelo com timeout individual
         const [resCadastro, resFc, resUltSemana, resBp, resFcAnual, resCompr] = await Promise.allSettled([
           withTimeout(supabase.from('projetos').select('*').order('identificacao')),
@@ -617,7 +635,7 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
             .lt('semana_coleta', semana)
             .order('semana_coleta', { ascending: false }).limit(1).single()),
           withTimeout(supabase.from('bp_anual').select('*').eq('ano', anoAtual).in('mes', mesesNums)),
-          withTimeout(supabase.from('forecast_semanal').select('*').eq('ano_referencia', anoAtual).limit(10000)),
+          withTimeout(fetchForecastAnualPaginado(), 30000),
           withTimeout(supabase.from('comprovacoes').select('*')
             .eq('ano_referencia', anoComprovacao).eq('mes_referencia', mesComprovacao)),
         ])
@@ -632,7 +650,7 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
         setForecastSemanaAnterior(resFcPrev?.data || [])
 
         setBpAnual(resBp.value?.data || [])
-        setForecastAnual(resFcAnual.value?.data || [])
+        setForecastAnual(resFcAnual.value || [])
         setComprovacoes(resCompr.value?.data || [])
       } catch (e) {
         console.error('Erro ao carregar dados:', e)
