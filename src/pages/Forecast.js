@@ -998,6 +998,11 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
       // (forecast_semanal.cod_projeto é integer, projetos.cod_projeto é text — compara como string)
       const proj = projetosCadastro.find(p => String(p.cod_projeto) === String(f.cod_projeto))
       if (!proj || !f.cod_projeto || !/^\d+$/.test(String(f.cod_projeto))) return
+      // Ignora projetos Encerrados/Internos (mesma regra do loop de bp_anual acima)
+      if (proj.status === 'Encerrado' || proj.status === 'Interno') return
+      // Ignora chave_rfc "órfã" de registros antigos cujo nome não bate mais com o cadastro atual
+      // (ex: projeto renomeado — o forecast_semanal antigo ficou com a chave_rfc anterior)
+      if (proj.identificacao && f.chave_rfc && !f.chave_rfc.startsWith(proj.identificacao)) return
       itensMap[f.chave_rfc] = {
         chave_rfc: f.chave_rfc,
         cod_projeto: f.cod_projeto,
