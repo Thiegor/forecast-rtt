@@ -1,10 +1,10 @@
 {
   "files": {
-    "main.js": "/forecast-rtt/static/js/main.5336273a.js",
+    "main.js": "/forecast-rtt/static/js/main.0db4e29b.js",
     "index.html": "/forecast-rtt/index.html",
-    "main.5336273a.js.map": "/forecast-rtt/static/js/main.5336273a.js.map"
+    "main.0db4e29b.js.map": "/forecast-rtt/static/js/main.0db4e29b.js.map"
   },
   "entrypoints": [
-    "static/js/main.5336273a.js"
+    "static/js/main.0db4e29b.js"
   ]
 }
