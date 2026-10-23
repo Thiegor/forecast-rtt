@@ -992,9 +992,9 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
       // BP: qualquer projeto, desde que grupo seja Backlog / PIPE / Renovação
       if (!GRUPOS_BP.includes(b.grupo)) return
       const proj = projetosCadastro.find(p => p.cod_projeto === b.cod_projeto)
-      // Excluir apenas Interno e Encerrado — Vigente, PIPELINE e demais entram
+      // Excluir Interno, Encerrado, PIPELINE e NOVOS NEGOCIOS (não preenchem forecast semanal)
       // Se proj não encontrado (ex: cod 265/25), mantém (tem BP real)
-      if (proj && (proj.status === 'Encerrado' || proj.status === 'Interno')) return
+      if (proj && (proj.status === 'Encerrado' || proj.status === 'Interno' || proj.status === 'PIPELINE' || proj.status === 'NOVOS NEGOCIOS')) return
       // chave_rfc foi construída como identificacao+grupo sem separador — remove o sufixo do grupo
       const identificacaoLimpa = b.grupo
         ? b.chave_rfc.replace(new RegExp(b.grupo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'), '').trim()
@@ -1016,8 +1016,8 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
       // (forecast_semanal.cod_projeto é integer, projetos.cod_projeto é text — compara como string)
       const proj = projetosCadastro.find(p => String(p.cod_projeto) === String(f.cod_projeto))
       if (!proj || !f.cod_projeto || !/^\d+$/.test(String(f.cod_projeto))) return
-      // Ignora projetos Encerrados/Internos (mesma regra do loop de bp_anual acima)
-      if (proj.status === 'Encerrado' || proj.status === 'Interno') return
+      // Ignora projetos Encerrados/Internos/PIPELINE/NOVOS NEGOCIOS
+      if (proj.status === 'Encerrado' || proj.status === 'Interno' || proj.status === 'PIPELINE' || proj.status === 'NOVOS NEGOCIOS') return
       // Ignora chave_rfc "órfã" de registros antigos cujo nome não bate mais com o cadastro atual
       // (ex: projeto renomeado — o forecast_semanal antigo ficou com a chave_rfc anterior)
       if (proj.identificacao && f.chave_rfc && !f.chave_rfc.startsWith(proj.identificacao)) return
