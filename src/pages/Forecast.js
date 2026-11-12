@@ -579,11 +579,14 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
   const anoPrev = semana === 1 ? anoAtual - 1 : anoAtual
 
   const mes1 = MESES_LONGOS[mesAtualIdx]
-  const mes2 = MESES_LONGOS[mesAtualIdx+1] || MESES_LONGOS[0]
-  const mes3 = MESES_LONGOS[mesAtualIdx+2] || MESES_LONGOS[1]
+  // % 12 na virada do ano (em novembro: Novembro, Dezembro, Janeiro do ano seguinte)
+  const mes2 = MESES_LONGOS[(mesAtualIdx + 1) % 12]
+  const mes3 = MESES_LONGOS[(mesAtualIdx + 2) % 12]
   const ano1 = anoAtual
   const ano2 = mesAtualIdx+1 > 11 ? anoAtual+1 : anoAtual
   const ano3 = mesAtualIdx+2 > 11 ? anoAtual+1 : anoAtual
+  // Anos de referência dos 3 meses da janela (2 anos em novembro/dezembro)
+  const anosJanela = [...new Set([ano1, ano2, ano3])]
 
   const MESES = [
     { key:'mes1', label:mes1, ano:ano1, mesNum: mesAtualIdx + 1 },
@@ -629,12 +632,12 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
         const [resCadastro, resFc, resUltSemana, resBp, resFcAnual, resCompr] = await Promise.allSettled([
           withTimeout(supabase.from('projetos').select('*').order('identificacao')),
           withTimeout(supabase.from('forecast_semanal').select('*')
-            .eq('semana_coleta', semana).eq('ano_referencia', anoAtual)),
+            .eq('semana_coleta', semana).in('ano_referencia', anosJanela)),
           withTimeout(supabase.from('forecast_semanal').select('semana_coleta')
             .eq('ano_referencia', anoAtual)
             .lt('semana_coleta', semana)
             .order('semana_coleta', { ascending: false }).limit(1).single()),
-          withTimeout(supabase.from('bp_anual').select('*').eq('ano', anoAtual).in('mes', mesesNums)),
+          withTimeout(supabase.from('bp_anual').select('*').in('ano', anosJanela).in('mes', mesesNums)),
           withTimeout(fetchForecastAnualPaginado(), 30000),
           withTimeout(supabase.from('comprovacoes').select('*')
             .eq('ano_referencia', anoComprovacao).eq('mes_referencia', mesComprovacao)),
@@ -645,7 +648,7 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
 
         const semanaRef = resUltSemana.value?.data?.semana_coleta ?? semanaPrev
         const resFcPrev = await withTimeout(
-          supabase.from('forecast_semanal').select('*').eq('semana_coleta', semanaRef).eq('ano_referencia', anoAtual)
+          supabase.from('forecast_semanal').select('*').eq('semana_coleta', semanaRef).in('ano_referencia', anosJanela)
         ).catch(() => ({ data: [] }))
         setForecastSemanaAnterior(resFcPrev?.data || [])
 
@@ -1061,7 +1064,7 @@ export default function Forecast({ perfil, onLogout, onNavigate }) {
               <span style={{fontSize:16,fontWeight:800,color:RTT.vermelho,letterSpacing:"-0.02em",fontFamily:F}}>RTT</span>
               <div>
                 <div style={{fontSize:12,fontWeight:600,color:RTT.branco,lineHeight:1.2,fontFamily:F}}>Forecast Semanal</div>
-                <div style={{fontSize:11,color:RTT.cinzaTexto,fontFamily:F}}>S{semana} · {mes1.slice(0,3)}–{mes3.slice(0,3)} {anoAtual}</div>
+                <div style={{fontSize:11,color:RTT.cinzaTexto,fontFamily:F}}>S{semana} · {mes1.slice(0,3)}–{mes3.slice(0,3)} {anosJanela.join('/')}</div>
               </div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
